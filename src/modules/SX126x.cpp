@@ -1,5 +1,7 @@
 #include "SX126x.h"
 
+static SX126x* SX126x::pCurrentReceiver;
+
 SX126x::SX126x(Module* mod) : PhysicalLayer(SX126X_CRYSTAL_FREQ, SX126X_DIV_EXPONENT, SX126X_MAX_PACKET_LENGTH) {
   _mod = mod;
 }
@@ -184,7 +186,8 @@ int16_t SX126x::transmit(uint8_t* data, size_t len, uint8_t addr) {
 
   // wait for packet transmission or timeout
   uint32_t start = micros();
-  while(!digitalRead(_mod->getInt0())) {
+  int16_t val;
+  while(!(val = digitalRead(_mod->getInt0()))) {
     if(micros() - start > timeout) {
       clearIrqStatus();
       return(ERR_TX_TIMEOUT);
@@ -291,8 +294,9 @@ int16_t SX126x::scanChannel() {
   if(state != ERR_NONE) {
     return(state);
   }
-
+  
   // set DIO pin mapping
+  detachInterrupt(digitalPinToInterrupt(_mod->getInt0()));
   state = setDioIrqParams(SX126X_IRQ_CAD_DETECTED | SX126X_IRQ_CAD_DONE, SX126X_IRQ_CAD_DETECTED | SX126X_IRQ_CAD_DONE);
   if(state != ERR_NONE) {
     return(state);
@@ -329,8 +333,50 @@ int16_t SX126x::scanChannel() {
 }
 
 int16_t SX126x::isChannelBusy(bool scanIfInRx) {
-  // not yet implemented
-  return ERR_UNKNOWN;
+  uint8_t status;
+  int16_t state = getStatus(&status);
+  if(state != ERR_NONE) {
+    return(state);
+  }
+  Serial.println((status & 0b01110000) >> 4);
+  bool wasRx = (status & 0b01110000) == (5 << 4);
+  if(wasRx) {
+    RADIOLIB_DEBUG_PRINTLN(F("isChannelBusy queried in receive."));
+    RADIOLIB_DEBUG_PRINT(F("maybe receiving: "));
+    RADIOLIB_DEBUG_PRINTLN(_maybeReceiving);
+    if(_maybeReceiving) {
+      // We might have detected a preamble but never got the message
+      // so we need some timeout logic.
+      // This estimates a timeout at least as long as our longest packet we've ever received,
+      // and at least 3 times the average packet length.
+      // We might want to tweak this algorithm (what exists in literature?)
+      uint32_t preambleDetectTimeout = (2 * _avgPacketMicros + _longestPacketMicros);
+      uint32_t curMicros = micros();
+      RADIOLIB_DEBUG_PRINT(F("dm: "));
+      RADIOLIB_DEBUG_PRINT(curMicros - _lastPreambleDetMicros);
+      RADIOLIB_DEBUG_PRINT(F(" apm: "));
+      RADIOLIB_DEBUG_PRINT(_avgPacketMicros);
+      RADIOLIB_DEBUG_PRINT(F(" lpm: "));
+      RADIOLIB_DEBUG_PRINTLN(_longestPacketMicros);
+      if((curMicros - _lastPreambleDetMicros) < preambleDetectTimeout) {
+        return(LORA_DETECTED);
+      }
+    }
+    if(!scanIfInRx) {
+      return(CHANNEL_FREE);
+    }
+  }
+
+  int16_t ret = scanChannel();
+
+  if (wasRx)
+  {
+    state = startReceive();
+    if (state != ERR_NONE) {
+      return(state);
+    }
+  }
+  return(ret);
 }
 
 int16_t SX126x::sleep() {
@@ -353,7 +399,13 @@ int16_t SX126x::standby(uint8_t mode) {
 }
 
 void SX126x::setDio1Action(void (*func)(void)) {
-  attachInterrupt(digitalPinToInterrupt(_mod->getInt0()), func, RISING);
+  if (func == NULL) {
+    detachInterrupt(digitalPinToInterrupt(_mod->getInt0()));
+  } else {
+    attachInterrupt(digitalPinToInterrupt(_mod->getInt0()), func, RISING);
+  }
+  _dio1Action = func;
+  _packetReceivedFunc = func;
 }
 
 void SX126x::setDio2Action(void (*func)(void)) {
@@ -383,6 +435,8 @@ int16_t SX126x::startTransmit(uint8_t* data, size_t len, uint8_t addr) {
     return(state);
   }
 
+  //Ensure our Rx action isn't active - it clears the IRQ flags as it goes.
+  setDio1Action(_dio1Action);
   // set DIO mapping
   state = setDioIrqParams(SX126X_IRQ_TX_DONE | SX126X_IRQ_TIMEOUT, SX126X_IRQ_TX_DONE);
   if(state != ERR_NONE) {
@@ -421,7 +475,8 @@ int16_t SX126x::startTransmit(uint8_t* data, size_t len, uint8_t addr) {
 
 int16_t SX126x::startReceive(uint32_t timeout) {
   // set DIO mapping
-  int16_t state = setDioIrqParams(SX126X_IRQ_RX_DONE | SX126X_IRQ_TIMEOUT, SX126X_IRQ_RX_DONE);
+  int16_t state = setDioIrqParams(SX126X_IRQ_RX_DONE | SX126X_IRQ_TIMEOUT | SX126X_IRQ_PREAMBLE_DETECTED, 
+                                  SX126X_IRQ_RX_DONE | SX126X_IRQ_PREAMBLE_DETECTED);
   if(state != ERR_NONE) {
     return(state);
   }
@@ -437,11 +492,70 @@ int16_t SX126x::startReceive(uint32_t timeout) {
   if(state != ERR_NONE) {
     return(state);
   }
+  
+  // _maybeReceiving might have been left over from last time we were in startReceive
+  _maybeReceiving = false;
+  pCurrentReceiver = this;
+  attachInterrupt(digitalPinToInterrupt(_mod->getInt0()), rxInterruptActionStatic, RISING);
+  // TODO revert to DIO1 action when we exit receive.
+  // This could happen in a number of places and might make the code fragile.
+  // Investigate whether a breaking change is acceptable: replace setDIO1Action with setRxAction and setTxAction
 
   // set mode to receive
   state = setRx(timeout);
 
   return(state);
+}
+
+static void SX126x::rxInterruptActionStatic() {
+  SX126x::pCurrentReceiver->rxInterruptAction();
+}
+
+void SX126x::rxInterruptAction() {
+  // freeze micros at entry.
+  uint32_t entryMicros = micros();
+
+  /* I wish there was an atomic get & clear IRQ status in one go,
+     so we don't have to worry about what happens if another flag is signalled between these two calls.
+     But there isn't, so this is what we get:
+
+     We're guaranteed to run until the IRQ register is empty.
+     If DIO1 goes low and high again and the SX126x triggers additional interrupts on the MCU while we're in this function, 
+     we'll run again but the register will be empty so no harm 
+     (other than the fact we can end up in a blocking ISR for a long time)
+    */
+  int16_t irqStatus;
+  do {
+    irqStatus = getIrqStatus();
+    clearIrqStatus(irqStatus);
+    if (irqStatus)
+      rxInterruptAction(irqStatus, entryMicros);
+  } while (irqStatus);
+}
+
+void SX126x::rxInterruptAction(int16_t irqStatus, uint32_t entryMicros)
+{
+  if(irqStatus & SX126X_IRQ_PREAMBLE_DETECTED) {
+    _maybeReceiving = true;
+    _lastPreambleDetMicros = entryMicros;
+  }
+  if (irqStatus & SX126X_IRQ_RX_DONE) {
+    _maybeReceiving = false;
+    // update our averages
+    // we're in an ISR here, don't waste cycles with floating point or division operations.
+    // exponential moving average weighted for the last N values is approximately
+    // Avg(n) = 1 / N * Val(n) + (N - 1) / N * Avg(n - 1)
+    uint32_t pktMicros = entryMicros - _lastPreambleDetMicros;
+    _avgPacketMicros = 
+      (pktMicros >> SX126X_PACKET_AVG_SHIFT_COUNT)
+      + 
+      ((_avgPacketMicros * SX126X_PACKET_AVG_NUM) >> SX126X_PACKET_AVG_SHIFT_COUNT);
+    if(pktMicros > _longestPacketMicros) {
+      _longestPacketMicros = pktMicros;
+    }
+    if(_dio1Action)
+      _packetReceivedFunc();
+  }
 }
 
 int16_t SX126x::readData(uint8_t* data, size_t len) {

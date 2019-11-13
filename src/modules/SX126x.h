@@ -319,6 +319,9 @@
 #define SX126X_SYNC_WORD_PUBLIC                       0x3444
 #define SX126X_SYNC_WORD_PRIVATE                      0x1424
 
+#define SX126X_PACKET_AVG_SHIFT_COUNT                 3 //Corresponds to 8
+#define SX126X_PACKET_AVG_NUM                         7
+
 
 /*!
   \class SX126x
@@ -783,9 +786,21 @@ class SX126x: public PhysicalLayer {
     uint16_t _preambleLengthFSK;
     float _rxBwKhz;
 
+    uint32_t _lastPreambleDetMicros = 0, _longestPacketMicros = 0, _avgPacketMicros = 1E6;
+    bool _maybeReceiving = false;
+
     float _dataRate;
 
     int16_t config(uint8_t modem);
+    
+    // this could be duplicated to allow multiple instances of SX126x to listen simultaneously
+    static SX126x* pCurrentReceiver;
+    static void rxInterruptActionStatic();
+    void rxInterruptAction();
+    void rxInterruptAction(int16_t irqStatus, uint32_t entryMicros);
+
+    void (*_packetReceivedFunc)(void)  = NULL;
+    void (*_dio1Action)(void) = NULL;
 
 
 
