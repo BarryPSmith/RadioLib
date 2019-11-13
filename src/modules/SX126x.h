@@ -292,6 +292,7 @@
 #define SX126X_STATUS_CMD_FAILED                      0b00001010  //  3     1                     SPI command failed to execute
 #define SX126X_STATUS_TX_DONE                         0b00001100  //  3     1                     packet transmission done
 #define SX126X_STATUS_SPI_FAILED                      0b11111111  //  7     0     SPI transaction failed
+#define SX126X_STATUS_MODE_MASK                       0b01110000
 
 //SX126X_CMD_GET_PACKET_STATUS
 #define SX126X_GFSK_RX_STATUS_PREAMBLE_ERR            0b10000000  //  7     7     GFSK Rx status: preamble error
@@ -485,6 +486,20 @@ class SX126x: public PhysicalLayer {
       \param func ISR to call.
     */
     void setDio2Action(void (*func)(void));
+
+    /*!
+      \brief Sets interrupt service routine to call when DIO1 activates.
+
+      \param func ISR to call.
+    */
+    void setTxDoneAction(void (*func)(void));
+
+    /*!
+      \brief Sets interrupt service routine to call when DIO1 activates.
+
+      \param func ISR to call.
+    */
+    void setRxDoneAction(void (*func)(void));
 
     /*!
       \brief Interrupt-driven binary transmit method.
@@ -740,6 +755,10 @@ class SX126x: public PhysicalLayer {
    */
    uint32_t getTimeOnAir(size_t len);
 
+   /*!
+    \brief This must be called to allow isChannelBusy to detect channel activity without interrupting receive.
+   */
+   void enableIsChannelBusy();
   protected:
     // SX1276x SPI command implementations
     int16_t setTx(uint32_t timeout = 0);
@@ -777,6 +796,8 @@ class SX126x: public PhysicalLayer {
   private:
     Module* _mod;
 
+    int16_t _curStatus;
+
     uint8_t _bw, _sf, _cr, _ldro, _crcType;
     uint16_t _preambleLength;
     float _bwKhz;
@@ -788,19 +809,22 @@ class SX126x: public PhysicalLayer {
 
     uint32_t _lastPreambleDetMicros = 0, _longestPacketMicros = 0, _avgPacketMicros = 1E6;
     bool _maybeReceiving = false;
+    bool _enableIsChannelBusy = false;
 
     float _dataRate;
 
     int16_t config(uint8_t modem);
     
-    // this could be duplicated to allow multiple instances of SX126x to listen simultaneously
+    // these statics could be duplicated to allow multiple instances of SX126x to listen simultaneously
     static SX126x* pCurrentReceiver;
+    static SX126x* pCurrentTransmitter;
+    static void txInterruptActionStatic();
     static void rxInterruptActionStatic();
     void rxInterruptAction();
     void rxInterruptAction(int16_t irqStatus, uint32_t entryMicros);
 
-    void (*_packetReceivedFunc)(void)  = NULL;
-    void (*_dio1Action)(void) = NULL;
+    void (*_rxDoneFunc)(void)  = NULL;
+    void (*_txDoneFunc)(void) = NULL;
 
 
 

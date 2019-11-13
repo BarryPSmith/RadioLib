@@ -1,6 +1,7 @@
 #include "SX126x.h"
 
 static SX126x* SX126x::pCurrentReceiver;
+static SX126x* SX126x::pCurrentTransmitter;
 
 SX126x::SX126x(Module* mod) : PhysicalLayer(SX126X_CRYSTAL_FREQ, SX126X_DIV_EXPONENT, SX126X_MAX_PACKET_LENGTH) {
   _mod = mod;
@@ -296,7 +297,9 @@ int16_t SX126x::scanChannel() {
   }
   
   // set DIO pin mapping
-  detachInterrupt(digitalPinToInterrupt(_mod->getInt0()));
+  if (_enableIsChannelBusy) {
+    detachInterrupt(digitalPinToInterrupt(_mod->getInt0()));
+  }
   state = setDioIrqParams(SX126X_IRQ_CAD_DETECTED | SX126X_IRQ_CAD_DONE, SX126X_IRQ_CAD_DETECTED | SX126X_IRQ_CAD_DONE);
   if(state != ERR_NONE) {
     return(state);
@@ -338,8 +341,8 @@ int16_t SX126x::isChannelBusy(bool scanIfInRx) {
   if(state != ERR_NONE) {
     return(state);
   }
-  Serial.println((status & 0b01110000) >> 4);
-  bool wasRx = (status & 0b01110000) == (5 << 4);
+  Serial.println((status & SX126X_STATUS_MODE_MASK) >> 4);
+  bool wasRx = (status & SX126X_STATUS_MODE_MASK) == (5 << 4);
   if(wasRx) {
     RADIOLIB_DEBUG_PRINTLN(F("isChannelBusy queried in receive."));
     RADIOLIB_DEBUG_PRINT(F("maybe receiving: "));
@@ -390,22 +393,30 @@ int16_t SX126x::sleep() {
 }
 
 int16_t SX126x::standby() {
-  return(SX126x::standby(SX126X_STANDBY_RC));
+   return(SX126x::standby(SX126X_STANDBY_RC));
 }
 
 int16_t SX126x::standby(uint8_t mode) {
   uint8_t data[] = {mode};
-  return(SPIwriteCommand(SX126X_CMD_SET_STANDBY, data, 1));
+  int16_t state = SPIwriteCommand(SX126X_CMD_SET_STANDBY, data, 1);
+  _curStatus = state | 0x01110000;
+  return(state);
 }
 
 void SX126x::setDio1Action(void (*func)(void)) {
-  if (func == NULL) {
-    detachInterrupt(digitalPinToInterrupt(_mod->getInt0()));
-  } else {
-    attachInterrupt(digitalPinToInterrupt(_mod->getInt0()), func, RISING);
+  if (_enableIsChannelBusy) {
+    RADIOLIB_DEBUG_PRINTLN(F("!Cannot call setDio1Action if using isChannelBusy!"));
+    return;
   }
-  _dio1Action = func;
-  _packetReceivedFunc = func;
+  attachInterrupt(digitalPinToInterrupt(_mod->getInt0()), func, RISING);
+}
+
+void SX126x::setTxDoneAction(void (*func)(void)) {
+  _txDoneFunc = func;
+}
+
+void SX126x::setRxDoneAction(void (*func)(void)) {
+  _rxDoneFunc = func;
 }
 
 void SX126x::setDio2Action(void (*func)(void)) {
@@ -436,8 +447,8 @@ int16_t SX126x::startTransmit(uint8_t* data, size_t len, uint8_t addr) {
   }
 
   //Ensure our Rx action isn't active - it clears the IRQ flags as it goes.
-  setDio1Action(_dio1Action);
   // set DIO mapping
+  attachInterrupt(digitalPinToInterrupt(_mod->getInt0()), txInterruptActionStatic, RISING);
   state = setDioIrqParams(SX126X_IRQ_TX_DONE | SX126X_IRQ_TIMEOUT, SX126X_IRQ_TX_DONE);
   if(state != ERR_NONE) {
     return(state);
@@ -475,8 +486,15 @@ int16_t SX126x::startTransmit(uint8_t* data, size_t len, uint8_t addr) {
 
 int16_t SX126x::startReceive(uint32_t timeout) {
   // set DIO mapping
-  int16_t state = setDioIrqParams(SX126X_IRQ_RX_DONE | SX126X_IRQ_TIMEOUT | SX126X_IRQ_PREAMBLE_DETECTED, 
-                                  SX126X_IRQ_RX_DONE | SX126X_IRQ_PREAMBLE_DETECTED);
+  uint16_t irqMask = SX126X_IRQ_RX_DONE | SX126X_IRQ_TIMEOUT,
+           dio1Mask = SX126X_IRQ_RX_DONE ;
+
+  if (_enableIsChannelBusy) {
+    irqMask |= SX126X_IRQ_PREAMBLE_DETECTED;
+    dio1Mask |= SX126X_IRQ_PREAMBLE_DETECTED;
+  }
+
+  int16_t state = setDioIrqParams(irqMask, dio1Mask);
   if(state != ERR_NONE) {
     return(state);
   }
@@ -493,13 +511,16 @@ int16_t SX126x::startReceive(uint32_t timeout) {
     return(state);
   }
   
-  // _maybeReceiving might have been left over from last time we were in startReceive
-  _maybeReceiving = false;
-  pCurrentReceiver = this;
-  attachInterrupt(digitalPinToInterrupt(_mod->getInt0()), rxInterruptActionStatic, RISING);
-  // TODO revert to DIO1 action when we exit receive.
-  // This could happen in a number of places and might make the code fragile.
-  // Investigate whether a breaking change is acceptable: replace setDIO1Action with setRxAction and setTxAction
+  if (_enableIsChannelBusy)
+  {
+    // _maybeReceiving might have been left over from last time we were in startReceive
+    _maybeReceiving = false;
+    pCurrentReceiver = this;
+    attachInterrupt(digitalPinToInterrupt(_mod->getInt0()), rxInterruptActionStatic, RISING);
+    // TODO revert to DIO1 action when we exit receive.
+    // This could happen in a number of places and might make the code fragile.
+    // Investigate whether a breaking change is acceptable: replace setDIO1Action with setRxAction and setTxAction
+  }
 
   // set mode to receive
   state = setRx(timeout);
@@ -511,9 +532,19 @@ static void SX126x::rxInterruptActionStatic() {
   SX126x::pCurrentReceiver->rxInterruptAction();
 }
 
+static void SX126x::txInterruptActionStatic() {
+  if ((SX126x::pCurrentTransmitter->_txDoneFunc != 0) &&
+      (SX126x::pCurrentTransmitter->_curStatus == SX126X_STATUS_MODE_TX)) {
+    SX126x::pCurrentTransmitter->_txDoneFunc();
+  }
+}
+
 void SX126x::rxInterruptAction() {
   // freeze micros at entry.
   uint32_t entryMicros = micros();
+
+  if (_curStatus != SX126X_STATUS_MODE_RX)
+    return;
 
   /* I wish there was an atomic get & clear IRQ status in one go,
      so we don't have to worry about what happens if another flag is signalled between these two calls.
@@ -532,6 +563,8 @@ void SX126x::rxInterruptAction() {
       rxInterruptAction(irqStatus, entryMicros);
   } while (irqStatus);
 }
+
+
 
 void SX126x::rxInterruptAction(int16_t irqStatus, uint32_t entryMicros)
 {
@@ -553,8 +586,8 @@ void SX126x::rxInterruptAction(int16_t irqStatus, uint32_t entryMicros)
     if(pktMicros > _longestPacketMicros) {
       _longestPacketMicros = pktMicros;
     }
-    if(_dio1Action)
-      _packetReceivedFunc();
+    if(_rxDoneFunc)
+      _rxDoneFunc();
   }
 }
 
@@ -1087,6 +1120,11 @@ uint32_t SX126x::getTimeOnAir(size_t len) {
   }
 }
 
+void SX126x::enableIsChannelBusy()
+{
+  _enableIsChannelBusy = true;
+}
+
 int16_t SX126x::setTCXO(float voltage, uint32_t timeout) {
   // set mode to standby
   standby();
@@ -1137,16 +1175,22 @@ int16_t SX126x::setDio2AsRfSwitch(bool enable) {
 
 int16_t SX126x::setTx(uint32_t timeout) {
   uint8_t data[3] = {(uint8_t)((timeout >> 16) & 0xFF), (uint8_t)((timeout >> 8) & 0xFF), (uint8_t)(timeout & 0xFF)};
-  return(SPIwriteCommand(SX126X_CMD_SET_TX, data, 3));
+  int16_t state = SPIwriteCommand(SX126X_CMD_SET_TX, data, 3);
+  _curStatus = state & SX126X_STATUS_MODE_MASK;
+  return(state);
 }
 
 int16_t SX126x::setRx(uint32_t timeout) {
   uint8_t data[3] = {(uint8_t)((timeout >> 16) & 0xFF), (uint8_t)((timeout >> 8) & 0xFF), (uint8_t)(timeout & 0xFF)};
-  return(SPIwriteCommand(SX126X_CMD_SET_RX, data, 3));
+  int16_t state = SPIwriteCommand(SX126X_CMD_SET_RX, data, 3);
+  _curStatus = state & SX126X_STATUS_MODE_MASK;
+  return(state);
 }
 
 int16_t SX126x::setCad() {
-  return(SPIwriteCommand(SX126X_CMD_SET_CAD, NULL, 0));
+  int16_t state = SPIwriteCommand(SX126X_CMD_SET_CAD, NULL, 0);
+  _curStatus = state & SX126X_STATUS_MODE_MASK;
+  return(state);
 }
 
 int16_t SX126x::setPaConfig(uint8_t paDutyCycle, uint8_t deviceSel, uint8_t hpMax, uint8_t paLut) {
