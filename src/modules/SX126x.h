@@ -432,6 +432,19 @@ class SX126x: public PhysicalLayer {
     int16_t scanChannel();
 
     /*!
+      \brief Indicates whether the channel is currently busy.
+      
+      If the radio is in receive mode, estimates whether likely receiving based on whether a preamble has been detected recently. Returns LORA_DETECTED immediately without leaving Rx if so.
+      Otherwise, returns the result of scanChannel.
+      If called while the radio is in Rx and scanChannel returns LORA_DETECTED, returns the radio to receive mode.
+
+      \param scanIfInRx Indicates whether to still perform scanChannel if the radio is in receive mode. Default is true.
+
+      \returns \ref status_codes
+    */
+    int16_t isChannelBusy(bool scanIfInRx = true);
+
+    /*!
       \brief Sets the module to sleep mode.
 
       \returns \ref status_codes
@@ -747,7 +760,7 @@ class SX126x: public PhysicalLayer {
     int16_t setPacketParams(uint16_t preambleLength, uint8_t crcType, uint8_t payloadLength = 0xFF, uint8_t headerType = SX126X_LORA_HEADER_EXPLICIT, uint8_t invertIQ = SX126X_LORA_IQ_STANDARD);
     int16_t setPacketParamsFSK(uint16_t preambleLength, uint8_t crcType, uint8_t syncWordLength, uint8_t addrComp, uint8_t whitening, uint8_t payloadLength = 0xFF, uint8_t packetType = SX126X_GFSK_PACKET_VARIABLE, uint8_t preambleDetectorLength = SX126X_GFSK_PREAMBLE_DETECT_16);
     int16_t setBufferBaseAddress(uint8_t txBaseAddress = 0x00, uint8_t rxBaseAddress = 0x00);
-    uint8_t getStatus();
+    int16_t getStatus(uint8_t* status);
     uint32_t getPacketStatus();
     uint16_t getDeviceErrors();
     int16_t clearDeviceErrors();
@@ -781,7 +794,9 @@ class SX126x: public PhysicalLayer {
     int16_t SPIwriteCommand(uint8_t* cmd, uint8_t cmdLen, uint8_t* data, uint8_t numBytes, bool waitForBusy = true);
     int16_t SPIreadCommand(uint8_t cmd, uint8_t* data, uint8_t numBytes, bool waitForBusy = true);
     int16_t SPIreadCommand(uint8_t* cmd, uint8_t cmdLen, uint8_t* data, uint8_t numBytes, bool waitForBusy = true);
-    int16_t SPItransfer(uint8_t* cmd, uint8_t cmdLen, bool write, uint8_t* dataOut, uint8_t* dataIn, uint8_t numBytes, bool waitForBusy, uint32_t timeout = 5000);
+    
+    int16_t SPItransfer(uint8_t* cmd, uint8_t cmdLen, bool write, uint8_t* dataOut, uint8_t* dataIn, uint8_t numBytes, bool waitForBusy, uint32_t timeout = 5000,
+      bool rdSkipFirstByte = true);
 };
 
 #endif

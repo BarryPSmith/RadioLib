@@ -328,6 +328,11 @@ int16_t SX126x::scanChannel() {
   return(ERR_UNKNOWN);
 }
 
+int16_t SX126x::isChannelBusy(bool scanIfInRx) {
+  // not yet implemented
+  return ERR_UNKNOWN;
+}
+
 int16_t SX126x::sleep() {
   uint8_t data[] = {SX126X_SLEEP_START_COLD | SX126X_SLEEP_RTC_OFF};
   int16_t state = SPIwriteCommand(SX126X_CMD_SET_SLEEP, data, 1, false);
@@ -1168,10 +1173,8 @@ int16_t SX126x::setBufferBaseAddress(uint8_t txBaseAddress, uint8_t rxBaseAddres
   return(SPIwriteCommand(SX126X_CMD_SET_BUFFER_BASE_ADDRESS, data, 2));
 }
 
-uint8_t SX126x::getStatus() {
-  uint8_t data[1];
-  SPIreadCommand(SX126X_CMD_GET_STATUS, data, 1);
-  return(data[0]);
+int16_t SX126x::getStatus(uint8_t* status) {
+  return SX126x::SPItransfer(SX126X_CMD_GET_STATUS, 1, false, NULL, status, 1, true, 5000, false);
 }
 
 uint32_t SX126x::getPacketStatus() {
@@ -1288,7 +1291,8 @@ int16_t SX126x::SPIreadCommand(uint8_t cmd, uint8_t* data, uint8_t numBytes, boo
   return(SX126x::SPItransfer(&cmd, 1, false, NULL, data, numBytes, waitForBusy));
 }
 
-int16_t SX126x::SPItransfer(uint8_t* cmd, uint8_t cmdLen, bool write, uint8_t* dataOut, uint8_t* dataIn, uint8_t numBytes, bool waitForBusy, uint32_t timeout) {
+int16_t SX126x::SPItransfer(uint8_t* cmd, uint8_t cmdLen, bool write, uint8_t* dataOut, uint8_t* dataIn, uint8_t numBytes, bool waitForBusy, uint32_t timeout,
+  bool rdSkipFirstByte) {
   // get pointer to used SPI interface and the settings
   SPIClass* spi = _mod->getSpi();
   SPISettings spiSettings = _mod->getSpiSettings();
@@ -1345,6 +1349,12 @@ int16_t SX126x::SPItransfer(uint8_t* cmd, uint8_t cmdLen, bool write, uint8_t* d
     #ifdef RADIOLIB_VERBOSE
       debugBuff[0] = in;
     #endif
+
+    if(!rdSkipFirstByte) {
+      dataIn[0] = in;
+      dataIn++;
+      numBytes--;
+    }
 
     // check status
     if(((in & 0b00001110) == SX126X_STATUS_CMD_TIMEOUT) ||
