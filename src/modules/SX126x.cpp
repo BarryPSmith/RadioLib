@@ -1,7 +1,7 @@
 #include "SX126x.h"
 
-static SX126x* SX126x::pCurrentReceiver;
-static SX126x* SX126x::pCurrentTransmitter;
+SX126x* SX126x::pCurrentReceiver;
+SX126x* SX126x::pCurrentTransmitter;
 
 SX126x::SX126x(Module* mod) : PhysicalLayer(SX126X_CRYSTAL_FREQ, SX126X_DIV_EXPONENT, SX126X_MAX_PACKET_LENGTH) {
   _mod = mod;
@@ -528,11 +528,11 @@ int16_t SX126x::startReceive(uint32_t timeout) {
   return(state);
 }
 
-static void SX126x::rxInterruptActionStatic() {
+void SX126x::rxInterruptActionStatic() {
   SX126x::pCurrentReceiver->rxInterruptAction();
 }
 
-static void SX126x::txInterruptActionStatic() {
+void SX126x::txInterruptActionStatic() {
   if ((SX126x::pCurrentTransmitter->_txDoneFunc != 0) &&
       (SX126x::pCurrentTransmitter->_curStatus == SX126X_STATUS_MODE_TX)) {
     SX126x::pCurrentTransmitter->_txDoneFunc();
@@ -1332,7 +1332,8 @@ int16_t SX126x::setBufferBaseAddress(uint8_t txBaseAddress, uint8_t rxBaseAddres
 }
 
 int16_t SX126x::getStatus(uint8_t* status) {
-  return SX126x::SPItransfer(SX126X_CMD_GET_STATUS, 1, false, NULL, status, 1, true, 5000, false);
+  uint8_t cmd = SX126X_CMD_GET_STATUS;
+  return SX126x::SPItransfer(&cmd, 1, false, NULL, status, 1, true, 5000, false);
 }
 
 uint32_t SX126x::getPacketStatus() {
