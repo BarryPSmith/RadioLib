@@ -131,7 +131,44 @@ class Module {
 
       \param gpio GPIO/interrupt pins to be used on the module. See \ref uart_config for details.
     */
-    void init(uint8_t interface, uint8_t gpio);
+    template<uint8_t interface>
+    void init(uint8_t gpio){
+      // select interface
+      switch(interface) {
+        case USE_SPI:
+          pinMode(_cs, OUTPUT);
+          digitalWrite(_cs, HIGH);
+          _spi->begin();
+          break;
+        case USE_UART:
+    #if defined(ESP32)
+          ModuleSerial->begin(baudrate, SERIAL_8N1, _rx, _tx);
+    #elif defined(ESP8266)
+          ModuleSerial->begin(baudrate, _rx, _tx, SWSERIAL_8N1);
+    #else
+          ModuleSerial->begin(baudrate);
+    #endif
+          break;
+        case USE_I2C:
+          break;
+      }
+
+      // select GPIO
+      switch(gpio) {
+        case INT_NONE:
+          break;
+        case INT_0:
+          pinMode(_int0, INPUT);
+          break;
+        case INT_1:
+          pinMode(_int1, INPUT);
+          break;
+        case INT_BOTH:
+          pinMode(_int0, INPUT);
+          pinMode(_int1, INPUT);
+          break;
+      }
+    }
 
     /*!
       \brief Terminate low-level module control.

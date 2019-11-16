@@ -14,7 +14,7 @@ RF69::RF69(Module* module) : PhysicalLayer(RF69_CRYSTAL_FREQ, RF69_DIV_EXPONENT,
 
 int16_t RF69::begin(float freq, float br, float rxBw, float freqDev, int8_t power) {
   // set module properties
-  _mod->init(USE_SPI, INT_0);
+  _mod->init<USE_SPI>(INT_BOTH);
 
   // try to find the RF69 chip
   uint8_t i = 0;

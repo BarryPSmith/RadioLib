@@ -9,7 +9,7 @@ SX126x::SX126x(Module* mod) : PhysicalLayer(SX126X_CRYSTAL_FREQ, SX126X_DIV_EXPO
 
 int16_t SX126x::begin(float bw, uint8_t sf, uint8_t cr, uint16_t syncWord, float currentLimit, uint16_t preambleLength) {
   // set module properties
-  _mod->init(USE_SPI, INT_BOTH);
+  _mod->init<USE_SPI>(INT_BOTH);
   pinMode(_mod->getRx(), INPUT);
 
   // BW in kHz and SF are required in order to calculate LDRO for setModulationParams
@@ -74,7 +74,7 @@ int16_t SX126x::begin(float bw, uint8_t sf, uint8_t cr, uint16_t syncWord, float
 
 int16_t SX126x::beginFSK(float br, float freqDev, float rxBw, float currentLimit, uint16_t preambleLength, float dataShaping) {
   // set module properties
-  _mod->init(USE_SPI, INT_BOTH);
+  _mod->init<USE_SPI>(INT_BOTH);
   pinMode(_mod->getRx(), INPUT);
 
   // initialize configuration variables (will be overwritten during public settings configuration)
@@ -321,7 +321,11 @@ int16_t SX126x::scanChannel() {
   while(!digitalRead(_mod->getInt0()));
 
   // check CAD result
-  uint16_t cadResult = getIrqStatus();
+  uint16_t cadResult;
+  state = getIrqStatus(&cadResult);
+  if (state != ERR_NONE)
+    return state;
+
   if(cadResult & SX126X_IRQ_CAD_DETECTED) {
     // detected some LoRa activity
     clearIrqStatus();
@@ -341,8 +345,7 @@ int16_t SX126x::isChannelBusy(bool scanIfInRx) {
   if(state != ERR_NONE) {
     return(state);
   }
-  Serial.println((status & SX126X_STATUS_MODE_MASK) >> 4);
-  bool wasRx = (status & SX126X_STATUS_MODE_MASK) == (5 << 4);
+  bool wasRx = ((status & SX126X_STATUS_MODE_MASK) == SX126X_STATUS_MODE_RX);
   if(wasRx) {
     RADIOLIB_DEBUG_PRINTLN(F("isChannelBusy queried in receive."));
     RADIOLIB_DEBUG_PRINT(F("maybe receiving: "));
@@ -385,6 +388,9 @@ int16_t SX126x::isChannelBusy(bool scanIfInRx) {
 int16_t SX126x::sleep() {
   uint8_t data[] = {SX126X_SLEEP_START_COLD | SX126X_SLEEP_RTC_OFF};
   int16_t state = SPIwriteCommand(SX126X_CMD_SET_SLEEP, data, 1, false);
+  if (state == ERR_NONE) {
+    _curStatus = 0;
+  }
 
   // wait for SX126x to safely enter sleep mode
   delayMicroseconds(500);
@@ -399,7 +405,9 @@ int16_t SX126x::standby() {
 int16_t SX126x::standby(uint8_t mode) {
   uint8_t data[] = {mode};
   int16_t state = SPIwriteCommand(SX126X_CMD_SET_STANDBY, data, 1);
-  _curStatus = state | 0x01110000;
+  if (state == ERR_NONE) {
+    _curStatus = mode == SX126X_STANDBY_RC ? SX126X_STATUS_MODE_STDBY_RC : SX126X_STATUS_MODE_STDBY_XOSC;
+  }
   return(state);
 }
 
@@ -412,10 +420,14 @@ void SX126x::setDio1Action(void (*func)(void)) {
 }
 
 void SX126x::setTxDoneAction(void (*func)(void)) {
+  if (!this->_enableIsChannelBusy)
+    RADIOLIB_DEBUG_PRINTLN(F("!setTxDoneAction only works after enableIsChannelBusy!"));
   _txDoneFunc = func;
 }
 
 void SX126x::setRxDoneAction(void (*func)(void)) {
+  if (!this->_enableIsChannelBusy)
+    RADIOLIB_DEBUG_PRINTLN(F("!setRxDoneAction only works after enableIsChannelBusy!"));
   _rxDoneFunc = func;
 }
 
@@ -448,6 +460,9 @@ int16_t SX126x::startTransmit(uint8_t* data, size_t len, uint8_t addr) {
 
   //Ensure our Rx action isn't active - it clears the IRQ flags as it goes.
   // set DIO mapping
+  noInterrupts();
+  pCurrentTransmitter = this;
+  interrupts();
   attachInterrupt(digitalPinToInterrupt(_mod->getInt0()), txInterruptActionStatic, RISING);
   state = setDioIrqParams(SX126X_IRQ_TX_DONE | SX126X_IRQ_TIMEOUT, SX126X_IRQ_TX_DONE);
   if(state != ERR_NONE) {
@@ -515,7 +530,10 @@ int16_t SX126x::startReceive(uint32_t timeout) {
   {
     // _maybeReceiving might have been left over from last time we were in startReceive
     _maybeReceiving = false;
+    // addresses are two bytes, need to disable interrupts while changing them
+    noInterrupts();
     pCurrentReceiver = this;
+    interrupts();
     attachInterrupt(digitalPinToInterrupt(_mod->getInt0()), rxInterruptActionStatic, RISING);
     // TODO revert to DIO1 action when we exit receive.
     // This could happen in a number of places and might make the code fragile.
@@ -529,23 +547,32 @@ int16_t SX126x::startReceive(uint32_t timeout) {
 }
 
 void SX126x::rxInterruptActionStatic() {
-  SX126x::pCurrentReceiver->rxInterruptAction();
+  if (pCurrentReceiver != 0) {
+    pCurrentReceiver->_bailIfBusy = true;
+    SX126x::pCurrentReceiver->rxInterruptAction();
+    pCurrentReceiver->_bailIfBusy = false;
+  }
 }
 
 void SX126x::txInterruptActionStatic() {
-  if ((SX126x::pCurrentTransmitter->_txDoneFunc != 0) &&
+  if ((SX126x::pCurrentTransmitter != 0) &&
+      (SX126x::pCurrentTransmitter->_txDoneFunc != 0) &&
       (SX126x::pCurrentTransmitter->_curStatus == SX126X_STATUS_MODE_TX)) {
+    pCurrentTransmitter->_bailIfBusy = true;
     SX126x::pCurrentTransmitter->_txDoneFunc();
+    pCurrentTransmitter->_bailIfBusy = false;
   }
 }
 
 void SX126x::rxInterruptAction() {
   // freeze micros at entry.
   uint32_t entryMicros = micros();
+  
 
   if (_curStatus != SX126X_STATUS_MODE_RX)
     return;
 
+  uint8_t count = 0;
   /* I wish there was an atomic get & clear IRQ status in one go,
      so we don't have to worry about what happens if another flag is signalled between these two calls.
      But there isn't, so this is what we get:
@@ -555,10 +582,31 @@ void SX126x::rxInterruptAction() {
      we'll run again but the register will be empty so no harm 
      (other than the fact we can end up in a blocking ISR for a long time)
     */
-  int16_t irqStatus;
+  
+  uint16_t irqStatus;
   do {
-    irqStatus = getIrqStatus();
-    clearIrqStatus(irqStatus);
+    if (count++ > 3)
+    {
+#ifdef RADIOLIB_DEBUG
+      _bailed = true;
+#endif
+      return;
+    }
+        
+#ifndef RADIOLIB_DEBUG
+    // this is a class variable in debug mode.
+    int16_t _isrState;
+#endif
+    _isrState = getIrqStatus(&irqStatus);
+    if (_isrState != ERR_NONE) {
+      return;
+    }
+    irqStatus = irqStatus & (SX126X_IRQ_PREAMBLE_DETECTED | SX126X_IRQ_RX_DONE);
+
+    _isrState = clearIrqStatus(irqStatus);
+    if (_isrState != ERR_NONE) {
+      return;
+    }
     if (irqStatus)
       rxInterruptAction(irqStatus, entryMicros);
   } while (irqStatus);
@@ -566,7 +614,7 @@ void SX126x::rxInterruptAction() {
 
 
 
-void SX126x::rxInterruptAction(int16_t irqStatus, uint32_t entryMicros)
+void SX126x::rxInterruptAction(uint16_t irqStatus, uint32_t entryMicros)
 {
   if(irqStatus & SX126X_IRQ_PREAMBLE_DETECTED) {
     _maybeReceiving = true;
@@ -592,14 +640,20 @@ void SX126x::rxInterruptAction(int16_t irqStatus, uint32_t entryMicros)
 }
 
 int16_t SX126x::readData(uint8_t* data, size_t len) {
+  int16_t state;
   // set mode to standby
-  int16_t state = standby();
+  // BS: Why?
+  /* state = standby();
   if(state != ERR_NONE) {
     return(state);
-  }
+  }*/
 
   // check integrity CRC
-  uint16_t irq = getIrqStatus();
+  uint16_t irq;
+  state = getIrqStatus(&irq);
+  if (state != ERR_NONE) {
+    return state;
+  }
   if((irq & SX126X_IRQ_CRC_ERR) || (irq & SX126X_IRQ_HEADER_ERR)) {
     clearIrqStatus();
     return(ERR_CRC_MISMATCH);
@@ -607,12 +661,19 @@ int16_t SX126x::readData(uint8_t* data, size_t len) {
 
   // get packet length
   size_t length = len;
-  if(len == SX126X_MAX_PACKET_LENGTH) {
-    length = getPacketLength();
+
+  uint8_t packetLen, startAddr;
+  state = getBufferStatus(&packetLen, &startAddr);
+  if (state != ERR_NONE) {
+    return(state);
+  }
+
+  if (length > packetLen) {
+    length = packetLen;
   }
 
   // read packet data
-  state = readBuffer(data, length);
+  state = readBuffer(data, length, startAddr);
   if(state != ERR_NONE) {
     return(state);
   }
@@ -1092,11 +1153,29 @@ float SX126x::getSNR() {
   return(snrPkt/4.0);
 }
 
+int16_t SX126x::getBufferStatus(uint8_t* packetLen, uint8_t* startAddr) {
+  uint8_t rxBufStatus[2];
+  int16_t state = SPIreadCommand(SX126X_CMD_GET_RX_BUFFER_STATUS, rxBufStatus, 2);
+  if (state != ERR_NONE) {
+    return(state);
+  }
+  if (packetLen) {
+    *packetLen = rxBufStatus[0];
+  }
+  if (startAddr) {
+    *startAddr = rxBufStatus[1];
+  }
+  return(state);
+}
+
 size_t SX126x::getPacketLength(bool update) {
   (void)update;
-  uint8_t rxBufStatus[2];
-  SPIreadCommand(SX126X_CMD_GET_RX_BUFFER_STATUS, rxBufStatus, 2);
-  return((size_t)rxBufStatus[0]);
+  uint8_t packetLen = 0;
+  int16_t state = getBufferStatus(&packetLen, NULL);
+  if (state != ERR_NONE) {
+    return(0);
+  }
+  return(packetLen);
 }
 
 uint32_t SX126x::getTimeOnAir(size_t len) {
@@ -1176,20 +1255,26 @@ int16_t SX126x::setDio2AsRfSwitch(bool enable) {
 int16_t SX126x::setTx(uint32_t timeout) {
   uint8_t data[3] = {(uint8_t)((timeout >> 16) & 0xFF), (uint8_t)((timeout >> 8) & 0xFF), (uint8_t)(timeout & 0xFF)};
   int16_t state = SPIwriteCommand(SX126X_CMD_SET_TX, data, 3);
-  _curStatus = state & SX126X_STATUS_MODE_MASK;
+  if (state == ERR_NONE) {
+    _curStatus = SX126X_STATUS_MODE_TX;
+  }
   return(state);
 }
 
 int16_t SX126x::setRx(uint32_t timeout) {
   uint8_t data[3] = {(uint8_t)((timeout >> 16) & 0xFF), (uint8_t)((timeout >> 8) & 0xFF), (uint8_t)(timeout & 0xFF)};
   int16_t state = SPIwriteCommand(SX126X_CMD_SET_RX, data, 3);
-  _curStatus = state & SX126X_STATUS_MODE_MASK;
+  if (state == ERR_NONE) {
+    _curStatus = SX126X_STATUS_MODE_RX;
+  }
   return(state);
 }
 
 int16_t SX126x::setCad() {
   int16_t state = SPIwriteCommand(SX126X_CMD_SET_CAD, NULL, 0);
-  _curStatus = state & SX126X_STATUS_MODE_MASK;
+  if (state == ERR_NONE) {
+    _curStatus = 0; // technically we're in Rx, but we don't want to trigger the RX callbacks
+  }
   return(state);
 }
 
@@ -1216,8 +1301,8 @@ int16_t SX126x::writeBuffer(uint8_t* data, uint8_t numBytes, uint8_t offset) {
   return(state);
 }
 
-int16_t SX126x::readBuffer(uint8_t* data, uint8_t numBytes) {
-  uint8_t cmd[] = { SX126X_CMD_READ_BUFFER, SX126X_CMD_NOP };
+int16_t SX126x::readBuffer(uint8_t* data, uint8_t numBytes, uint8_t offset) {
+  uint8_t cmd[] = { SX126X_CMD_READ_BUFFER, offset };
   int16_t state = SPIreadCommand(cmd, 2, data, numBytes);
   return(state);
 }
@@ -1230,10 +1315,11 @@ int16_t SX126x::setDioIrqParams(uint16_t irqMask, uint16_t dio1Mask, uint16_t di
   return(SPIwriteCommand(SX126X_CMD_SET_DIO_IRQ_PARAMS, data, 8));
 }
 
-uint16_t SX126x::getIrqStatus() {
+int16_t SX126x::getIrqStatus(uint16_t* status) {
   uint8_t data[2];
-  SPIreadCommand(SX126X_CMD_GET_IRQ_STATUS, data, 2);
-  return(((uint16_t)(data[0]) << 8) | data[1]);
+  int16_t state = SPIreadCommand(SX126X_CMD_GET_IRQ_STATUS, data, 2);
+  *status = ((uint16_t)(data[0]) << 8) | data[1];
+  return state;
 }
 
 int16_t SX126x::clearIrqStatus(uint16_t clearIrqParams) {
@@ -1464,7 +1550,7 @@ int16_t SX126x::SPItransfer(uint8_t* cmd, uint8_t cmdLen, bool write, uint8_t* d
   RADIOLIB_VERBOSE_PRINTLN(F("Wait for BUSY ... "));
   uint32_t start = millis();
   while(digitalRead(_mod->getRx())) {
-    if(millis() - start >= timeout) {
+    if(_bailIfBusy || (millis() - start >= timeout)) {
       return(ERR_SPI_CMD_TIMEOUT);
     }
   }
@@ -1534,7 +1620,7 @@ int16_t SX126x::SPItransfer(uint8_t* cmd, uint8_t cmdLen, bool write, uint8_t* d
   digitalWrite(_mod->getCs(), HIGH);
 
   // wait for BUSY to go high and then low
-  if(waitForBusy) {
+  if(waitForBusy && !_bailIfBusy) {
     delayMicroseconds(1);
     start = millis();
     while(digitalRead(_mod->getRx())) {

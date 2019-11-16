@@ -58,43 +58,7 @@ Module::Module(int cs, int int0, int int1, int int2, SPIClass& spi, SPISettings 
   _spiSettings = spiSettings;
 }
 
-void Module::init(uint8_t interface, uint8_t gpio) {
-  // select interface
-  switch(interface) {
-    case USE_SPI:
-      pinMode(_cs, OUTPUT);
-      digitalWrite(_cs, HIGH);
-      _spi->begin();
-      break;
-    case USE_UART:
-#if defined(ESP32)
-      ModuleSerial->begin(baudrate, SERIAL_8N1, _rx, _tx);
-#elif defined(ESP8266)
-      ModuleSerial->begin(baudrate, _rx, _tx, SWSERIAL_8N1);
-#else
-      ModuleSerial->begin(baudrate);
-#endif
-      break;
-    case USE_I2C:
-      break;
-  }
 
-  // select GPIO
-  switch(gpio) {
-    case INT_NONE:
-      break;
-    case INT_0:
-      pinMode(_int0, INPUT);
-      break;
-    case INT_1:
-      pinMode(_int1, INPUT);
-      break;
-    case INT_BOTH:
-      pinMode(_int0, INPUT);
-      pinMode(_int1, INPUT);
-      break;
-  }
-}
 
 void Module::term() {
   // stop SPI

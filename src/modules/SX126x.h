@@ -768,9 +768,9 @@ class SX126x: public PhysicalLayer {
     int16_t writeRegister(uint16_t addr, uint8_t* data, uint8_t numBytes);
     int16_t readRegister(uint16_t addr, uint8_t* data, uint8_t numBytes);
     int16_t writeBuffer(uint8_t* data, uint8_t numBytes, uint8_t offset = 0x00);
-    int16_t readBuffer(uint8_t* data, uint8_t numBytes);
+    int16_t readBuffer(uint8_t* data, uint8_t numBytes, uint8_t offset = 0);
     int16_t setDioIrqParams(uint16_t irqMask, uint16_t dio1Mask, uint16_t dio2Mask = SX126X_IRQ_NONE, uint16_t dio3Mask = SX126X_IRQ_NONE);
-    uint16_t getIrqStatus();
+    int16_t getIrqStatus(uint16_t* status);
     int16_t clearIrqStatus(uint16_t clearIrqParams = SX126X_IRQ_ALL);
     int16_t setRfFrequency(uint32_t frf);
     int16_t calibrateImage(uint8_t* data);
@@ -786,6 +786,8 @@ class SX126x: public PhysicalLayer {
     uint32_t getPacketStatus();
     uint16_t getDeviceErrors();
     int16_t clearDeviceErrors();
+
+    int16_t getBufferStatus(uint8_t* packetLen, uint8_t* startAddr);
 
     int16_t setFrequencyRaw(float freq);
 
@@ -807,11 +809,13 @@ class SX126x: public PhysicalLayer {
     uint16_t _preambleLengthFSK;
     float _rxBwKhz;
 
-    uint32_t _lastPreambleDetMicros = 0, _longestPacketMicros = 0, _avgPacketMicros = 1E6;
-    bool _maybeReceiving = false;
+    volatile uint32_t _lastPreambleDetMicros = 0, _longestPacketMicros = 0, _avgPacketMicros = 1E6;
+    volatile bool _maybeReceiving = false;
     bool _enableIsChannelBusy = false;
 
     float _dataRate;
+
+    bool _bailIfBusy = false;
 
     int16_t config(uint8_t modem);
     
@@ -821,11 +825,16 @@ class SX126x: public PhysicalLayer {
     static void txInterruptActionStatic();
     static void rxInterruptActionStatic();
     void rxInterruptAction();
-    void rxInterruptAction(int16_t irqStatus, uint32_t entryMicros);
+    void rxInterruptAction(uint16_t irqStatus, uint32_t entryMicros);
 
     void (*_rxDoneFunc)(void)  = NULL;
     void (*_txDoneFunc)(void) = NULL;
 
+#ifdef RADIOLIB_DEBUG
+    // debugging variables for ISR functions.
+    bool _bailed = false;
+    int16_t _isrState = ERR_NONE;
+#endif
 
 
     // common low-level SPI interface
