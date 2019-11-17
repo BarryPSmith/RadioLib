@@ -217,6 +217,9 @@ int16_t SX1278::setSpreadingFactor(uint8_t sf) {
 
   // check allowed spreading factor values
   switch(sf) {
+    case 5:
+      newSpreadingFactor = SX127X_SF_5;
+      break;
     case 6:
       newSpreadingFactor = SX127X_SF_6;
       break;

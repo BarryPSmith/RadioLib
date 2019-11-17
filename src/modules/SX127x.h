@@ -95,6 +95,7 @@
 #define SX127X_LNA_BOOST_ON                           0b00000011  //  1     0     150% LNA current
 
 // SX127X_REG_MODEM_CONFIG_2
+#define SX127X_SF_5                                   0b01010000  //  7     4     spreading factor:   64 chips/bit
 #define SX127X_SF_6                                   0b01100000  //  7     4     spreading factor:   64 chips/bit
 #define SX127X_SF_7                                   0b01110000  //  7     4                         128 chips/bit
 #define SX127X_SF_8                                   0b10000000  //  7     4                         256 chips/bit
