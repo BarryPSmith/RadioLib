@@ -217,9 +217,6 @@ int16_t SX1278::setSpreadingFactor(uint8_t sf) {
 
   // check allowed spreading factor values
   switch(sf) {
-    case 5:
-      newSpreadingFactor = SX127X_SF_5;
-      break;
     case 6:
       newSpreadingFactor = SX127X_SF_6;
       break;
@@ -473,7 +470,7 @@ int16_t SX1278::setSpreadingFactorRaw(uint8_t newSpreadingFactor) {
   // write registers
   if(newSpreadingFactor == SX127X_SF_6) {
     state |= _mod->SPIsetRegValue(SX127X_REG_MODEM_CONFIG_1, SX1278_HEADER_IMPL_MODE, 0, 0);
-    state |= _mod->SPIsetRegValue(SX127X_REG_MODEM_CONFIG_2, SX127X_SF_6 | SX127X_TX_MODE_SINGLE | SX1278_RX_CRC_MODE_ON, 7, 2);
+    state |= _mod->SPIsetRegValue(SX127X_REG_MODEM_CONFIG_2, SX127X_SF_6 | SX127X_TX_MODE_SINGLE | SX1278_RX_CRC_MODE_OFF, 7, 2);
     state |= _mod->SPIsetRegValue(SX127X_REG_DETECT_OPTIMIZE, SX127X_DETECT_OPTIMIZE_SF_6, 2, 0);
     state |= _mod->SPIsetRegValue(SX127X_REG_DETECTION_THRESHOLD, SX127X_DETECTION_THRESHOLD_SF_6);
   } else {

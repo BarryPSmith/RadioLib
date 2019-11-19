@@ -1,5 +1,16 @@
 #include "SX126x.h"
 
+#ifdef DEBUG 
+// a handy debugging tool for ISRs where Serial is unavailable.
+void recordState(int i)
+{
+  digitalWrite(5, i & 1 ? 1 : 0);
+  digitalWrite(6, i & 2 ? 1 : 0);
+  digitalWrite(7, i & 4 ? 1 : 0);
+  digitalWrite(8, i & 8 ? 1 : 0);
+}
+#endif
+
 SX126x* SX126x::pCurrentReceiver;
 SX126x* SX126x::pCurrentTransmitter;
 
@@ -422,13 +433,17 @@ void SX126x::setDio1Action(void (*func)(void)) {
 void SX126x::setTxDoneAction(void (*func)(void)) {
   if (!this->_enableIsChannelBusy)
     RADIOLIB_DEBUG_PRINTLN(F("!setTxDoneAction only works after enableIsChannelBusy!"));
+  noInterrupts();
   _txDoneFunc = func;
+  interrupts();
 }
 
 void SX126x::setRxDoneAction(void (*func)(void)) {
   if (!this->_enableIsChannelBusy)
     RADIOLIB_DEBUG_PRINTLN(F("!setRxDoneAction only works after enableIsChannelBusy!"));
+  noInterrupts();
   _rxDoneFunc = func;
+  interrupts();
 }
 
 void SX126x::setDio2Action(void (*func)(void)) {
@@ -462,8 +477,8 @@ int16_t SX126x::startTransmit(uint8_t* data, size_t len, uint8_t addr) {
   // set DIO mapping
   noInterrupts();
   pCurrentTransmitter = this;
-  interrupts();
   attachInterrupt(digitalPinToInterrupt(_mod->getInt0()), txInterruptActionStatic, RISING);
+  interrupts();
   state = setDioIrqParams(SX126X_IRQ_TX_DONE | SX126X_IRQ_TIMEOUT, SX126X_IRQ_TX_DONE);
   if(state != ERR_NONE) {
     return(state);
@@ -525,7 +540,7 @@ int16_t SX126x::startReceive(uint32_t timeout) {
   if(state != ERR_NONE) {
     return(state);
   }
-  
+
   if (_enableIsChannelBusy)
   {
     // _maybeReceiving might have been left over from last time we were in startReceive
@@ -533,11 +548,8 @@ int16_t SX126x::startReceive(uint32_t timeout) {
     // addresses are two bytes, need to disable interrupts while changing them
     noInterrupts();
     pCurrentReceiver = this;
-    interrupts();
     attachInterrupt(digitalPinToInterrupt(_mod->getInt0()), rxInterruptActionStatic, RISING);
-    // TODO revert to DIO1 action when we exit receive.
-    // This could happen in a number of places and might make the code fragile.
-    // Investigate whether a breaking change is acceptable: replace setDIO1Action with setRxAction and setTxAction
+    interrupts();
   }
 
   // set mode to receive
