@@ -125,13 +125,35 @@ class Module {
     // basic methods
 
     /*!
-      \brief Initialize low-level module control.
+      \brief Initialize low-level module control. To avoid linking unnecessary libraries, use a specific InitSPI / InitUART / InitI2C rather.
 
       \param interface Interface to be used on the module. See \ref shield_config for details.
 
       \param gpio GPIO/interrupt pins to be used on the module. See \ref uart_config for details.
     */
+    [[deprecated("Replaced by interface specific init* functions, which have less memory footprint")]]
     void init(uint8_t interface, uint8_t gpio);
+
+    /*!
+      \brief Initialize low-level module control with SPI.
+
+      \param gpio GPIO/interrupt pins to be used on the module. See \ref uart_config for details.
+    */
+    void initSPI(uint8_t gpio);
+
+    /*!
+      \brief Initialize low-level module control with UART.
+
+      \param gpio GPIO/interrupt pins to be used on the module. See \ref uart_config for details.
+    */
+    void initUART(uint8_t gpio);
+
+    /*!
+      \brief Initialize low-level module control with SPI.
+
+      \param gpio GPIO/interrupt pins to be used on the module. See \ref uart_config for details.
+    */
+    void initI2C(uint8_t gpio);
 
     /*!
       \brief Terminate low-level module control.
@@ -313,6 +335,13 @@ class Module {
 #ifndef RADIOLIB_GODMODE
   private:
 #endif
+    /*!
+      \brief Initialize interrupts on the necessary pins.
+
+      \param gpio GPIO/interrupt pins to be used on the module. See \ref uart_config for details.
+    */
+    void initGpio(uint8_t gpio);
+
     int _cs;
     int _tx;
     int _rx;

@@ -52,25 +52,44 @@ Module::Module(int cs, int int0, int int1, int int2, SPIClass& spi, SPISettings 
   _spiSettings = spiSettings;
 }
 
-void Module::init(uint8_t interface, uint8_t gpio) {
-  // select interface
-  switch(interface) {
+// This version of init(...) is deprecated, use one of the functions it calls rather.
+void Module::init(uint8_t interface, uint8_t gpio)
+{
+  switch (interface){
     case RADIOLIB_USE_SPI:
-      pinMode(_cs, OUTPUT);
-      digitalWrite(_cs, HIGH);
-      _spi->begin();
+      initSPI(gpio);
       break;
     case RADIOLIB_USE_UART:
-#if defined(ESP32)
-      ModuleSerial->begin(baudrate, SERIAL_8N1, _rx, _tx);
-#else
-      ModuleSerial->begin(baudrate);
-#endif
+      initUART(gpio);
       break;
     case RADIOLIB_USE_I2C:
+      initI2C(gpio);
       break;
   }
+}
 
+void Module::initSPI(uint8_t gpio) {
+  pinMode(_cs, OUTPUT);
+  digitalWrite(_cs, HIGH);
+  _spi->begin();
+  initGpio(gpio);
+  }
+
+void Module::initUART(uint8_t gpio) {
+#if defined(ESP32)
+  ModuleSerial->begin(baudrate, SERIAL_8N1, _rx, _tx);
+#else
+  ModuleSerial->begin(baudrate);
+#endif
+  initGpio(gpio);
+}
+
+void Module::initI2C(uint8_t gpio) {
+  initGpio(gpio); 
+}
+
+void Module::initGpio(uint8_t gpio)
+{
   // select GPIO
   switch(gpio) {
     case RADIOLIB_INT_NONE:

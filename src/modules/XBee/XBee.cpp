@@ -10,7 +10,7 @@ XBee::XBee(Module* mod) {
 int16_t XBee::begin(long speed) {
   // set module properties
   _mod->baudrate = speed;
-  _mod->init(RADIOLIB_USE_UART, RADIOLIB_INT_1);
+  _mod->initUART(RADIOLIB_INT_1);
 
   // reset module
   reset();
@@ -189,7 +189,7 @@ int16_t XBeeSerial::begin(long speed) {
   // set module properties
   _mod->AtLineFeed = "\r";
   _mod->baudrate = speed;
-  _mod->init(RADIOLIB_USE_UART, RADIOLIB_INT_NONE);
+  _mod->initUART(RADIOLIB_INT_NONE);
 
   // empty UART buffer (garbage data)
   _mod->ATemptyBuffer();
