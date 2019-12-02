@@ -19,9 +19,8 @@
 // SX1262 has the following connections:
 // NSS pin:   10
 // DIO1 pin:  2
-// DIO2 pin:  3
 // BUSY pin:  9
-SX1262 fsk = new Module(10, 2, 3, 9);
+SX1262 fsk = new Module(10, 2, 9);
 
 // or using RadioShield
 // https://github.com/jgromes/RadioShield
@@ -40,6 +39,7 @@ void setup() {
   // current limit:               60.0 mA
   // preamble length:             16 bits
   // data shaping:                Gaussian, BT = 0.5
+  // TCXO voltage:                1.6 V (set to 0 to not use TCXO)
   // sync word:                   0x2D  0x01
   // CRC:                         enabled, CRC16 (CCIT)
   int state = fsk.beginFSK();
@@ -73,7 +73,7 @@ void setup() {
     Serial.println(state);
     while (true);
   }
-   
+
   // FSK modem on SX126x can handle the sync word setting in bits, not just
   // whole bytes. The value used is left-justified.
   // This makes same result as fsk.setSyncWord(syncWord, 8):

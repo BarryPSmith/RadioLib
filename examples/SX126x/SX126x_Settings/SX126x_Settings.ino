@@ -27,13 +27,18 @@
 // SX1262 has the following connections:
 // NSS pin:   10
 // DIO1 pin:  2
-// DIO2 pin:  3
 // BUSY pin:  9
-SX1262 loraSX1262 = new Module(10, 2, 3, 9);
+SX1262 loraSX1262 = new Module(10, 2, 9);
+
+// SX12628 has different connections:
+// NSS pin:   8
+// DIO1 pin:  4
+// BUSY pin:  6
+SX1268 loraSX1268 = new Module(8, 4, 6);
 
 // or using RadioShield
 // https://github.com/jgromes/RadioShield
-SX1268 loraSX1268 = RadioShield.ModuleB;
+//SX1261 loraSX1261 = RadioShield.ModuleB;
 
 void setup() {
   Serial.begin(9600);
@@ -48,6 +53,7 @@ void setup() {
   // output power:                14 dBm
   // current limit:               60 mA
   // preamble length:             8 symbols
+  // TCXO voltage:                1.6 V (set to 0 to not use TCXO)
   // CRC:                         enabled
   int state = loraSX1262.begin();
   if (state == ERR_NONE) {
