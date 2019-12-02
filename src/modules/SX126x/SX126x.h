@@ -7,7 +7,7 @@
 #include "../../protocols/PhysicalLayer/PhysicalLayer.h"
 
 // SX126X physical layer properties
-#define SX126X_CRYSTAL_FREQ                           32.0
+#define SX126X_CRYSTAL_FREQ                           32 // if this is set to a different number care must be taken to ensure integer calculation are still valid.
 #define SX126X_DIV_EXPONENT                           25
 #define SX126X_MAX_PACKET_LENGTH                      255
 
@@ -794,7 +794,7 @@ class SX126x: public PhysicalLayer {
 
     uint8_t _bw, _sf, _cr, _ldro, _crcType;
     uint16_t _preambleLength;
-    float _bwKhz;
+    float _bwKhz; // note in many places we assume that this has no more than 1 significant digit after the decimal point
 
     uint32_t _br, _freqDev;
     uint8_t _rxBw, _pulseShape, _crcTypeFSK, _syncWordLength, _addrComp, _whitening, _packetType;
