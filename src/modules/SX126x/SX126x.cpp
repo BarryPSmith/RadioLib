@@ -1,20 +1,20 @@
 #include "SX126x.h"
 
-// not sure where these belong. Leaving them here for now.
-static constexpr uint32_t usPerSecond = 1000000; // as in "microseconds per second".
-static constexpr uint32_t kilo = 1000; // as in "kilohertz". But for dimensional analysis it works better to call it kilo.
-static constexpr uint32_t MHz = 1000000;
 
 SX126x::SX126x(Module* mod) : PhysicalLayer(SX126X_CRYSTAL_FREQ, SX126X_DIV_EXPONENT, SX126X_MAX_PACKET_LENGTH) {
   _mod = mod;
 }
 
 int16_t SX126x::begin(float bw, uint8_t sf, uint8_t cr, uint16_t syncWord, float currentLimit, uint16_t preambleLength, float tcxoVoltage) {
+  return(begin_i(bw * 10 + 0.1, sf, cr, syncWord, currentLimit / 2.5, preambleLength, tcxoVoltage * 10 + 0.5));
+}
+
+int16_t SX126x::begin_i(uint16_t bwkHz_x10, uint8_t sf, uint8_t cr, uint16_t syncWord, uint8_t currentLimit_mA_div2_5, uint16_t preambleLength, uint_8t tcxoVoltage_x10) {
   // set module properties
   _mod->init(RADIOLIB_USE_SPI, RADIOLIB_INT_BOTH);
 
   // BW in kHz and SF are required in order to calculate LDRO for setModulationParams
-  _bwKhz = bw;
+  _bwkHz_x10 = bwkHz_x10;
   _sf = sf;
 
   // initialize configuration variables (will be overwritten during public settings configuration)
@@ -37,8 +37,8 @@ int16_t SX126x::begin(float bw, uint8_t sf, uint8_t cr, uint16_t syncWord, float
   }
 
   // set TCXO control, if requested
-  if(tcxoVoltage > 0.0) {
-    state = setTCXO(tcxoVoltage);
+  if(tcxoVoltage_x10 > 0) {
+    state = setTCXO_i(tcxoVoltage_x10);
     if(state != ERR_NONE) {
       return(state);
     }
@@ -50,7 +50,7 @@ int16_t SX126x::begin(float bw, uint8_t sf, uint8_t cr, uint16_t syncWord, float
     return(state);
   }
 
-  state = setBandwidth(bw);
+  state = setBandwidth_i(bwkHz_x10);
   if(state != ERR_NONE) {
     return(state);
   }
@@ -65,7 +65,7 @@ int16_t SX126x::begin(float bw, uint8_t sf, uint8_t cr, uint16_t syncWord, float
     return(state);
   }
 
-  state = setCurrentLimit(currentLimit);
+  state = setCurrentLimit_i(currentLimit_mA_div2_5);
   if(state != ERR_NONE) {
     return(state);
   }
@@ -82,6 +82,10 @@ int16_t SX126x::begin(float bw, uint8_t sf, uint8_t cr, uint16_t syncWord, float
 }
 
 int16_t SX126x::beginFSK(float br, float freqDev, float rxBw, float currentLimit, uint16_t preambleLength, float dataShaping, float tcxoVoltage) {
+  return(beginFSK_i(br * 1000 + 0.5, freqDev * 1000 + 0.5, rxBw * 10 + 0.5, currentLimit / 2.5 + 0.5, preambleLength, dataShaping * 10 + 0.5, tcxoVoltage * 10 + 0.5));
+}
+
+int16_t SX126x::beginFSK_i(uint32_t br_bps, uint32_t freqDev_Hz, uint16_t rxBw_kHz_x10, uint8_t currentLimit_mA_div2_5, uint16_t preambleLength, uint8_t dataShaping_x10, uint8_t tcxoVoltage_x10) {
   // set module properties
   _mod->init(RADIOLIB_USE_SPI, RADIOLIB_INT_BOTH);
 
@@ -89,7 +93,7 @@ int16_t SX126x::beginFSK(float br, float freqDev, float rxBw, float currentLimit
   _br = 21333;                                  // 48.0 kbps
   _freqDev = 52428;                             // 50.0 kHz
   _rxBw = SX126X_GFSK_RX_BW_156_2;
-  _rxBwKhz = 156.2;
+  _rxBwKhz_x10 = 1562;
   _pulseShape = SX126X_GFSK_FILTER_GAUSS_0_5;
   _crcTypeFSK = SX126X_GFSK_CRC_2_BYTE_INV;     // CCIT CRC configuration
   _preambleLengthFSK = preambleLength;
@@ -109,34 +113,34 @@ int16_t SX126x::beginFSK(float br, float freqDev, float rxBw, float currentLimit
 
   // set TCXO control, if requested
   if(tcxoVoltage > 0.0) {
-    state = setTCXO(tcxoVoltage);
+    state = setTCXO_i(tcxoVoltage_x10);
     if(state != ERR_NONE) {
       return(state);
     }
   }
 
   // configure publicly accessible settings
-  state = setBitRate(br);
+  state = setBitRate_i(br_bps);
   if(state != ERR_NONE) {
     return(state);
   }
 
-  state = setFrequencyDeviation(freqDev);
+  state = setFrequencyDeviation_i(freqDev_Hz);
   if(state != ERR_NONE) {
     return(state);
   }
 
-  state = setRxBandwidth(rxBw);
+  state = setRxBandwidth_i(rxBw_kHz_x10);
   if(state != ERR_NONE) {
     return(state);
   }
 
-  state = setCurrentLimit(currentLimit);
+  state = setCurrentLimit_i(currentLimit_mA_div2_5);
   if(state != ERR_NONE) {
     return(state);
   }
 
-  state = setDataShaping(dataShaping);
+  state = setDataShaping_i(dataShaping_x10);
   if(state != ERR_NONE) {
     return(state);
   }
@@ -209,10 +213,10 @@ int16_t SX126x::transmit(uint8_t* data, size_t len, uint8_t addr) {
       return(ERR_TX_TIMEOUT);
     }
   }
-  uint32_t elapsed = micros() - start;
+  uint32_t elapsed_us = micros() - start;
 
   // update data rate
-  _dataRate = (len * 8 * usPerSecond) / elapsed ;
+  _dataRate = (len * 8 * usPerSecond) / elapsed_us ;
 
   // clear interrupt flags
   state = clearIrqStatus();
@@ -511,55 +515,56 @@ int16_t SX126x::setBandwidth(float bw) {
   if(getPacketType() != SX126X_PACKET_TYPE_LORA) {
     return(ERR_WRONG_MODEM);
   }
-  // ensure we don't truncate when changing to byte
+  // ensure we don't truncate when changing to int16
   // check with ! and interior comparisons to catch NaN and infinity
   if (!(bw > 0 && bw < 501)) {
     return(ERR_INVALID_BANDWIDTH);
   }
 
-  // use an 8 bit integer to avoid floating point arithmetic
-  uint8_t bwi = (uint8_t) (bw / 2 + 0.5);
+  //note we add 0.1 here to ensure we end up with 312 instead of 313 if supplied 31.25
+  return(setBandwidth_i((uint16_t)bw * 10 + 0.1));
+}
 
+int16_t SX126x::setBandwidth_i(uint16_t bwkHz_x10) {
   // check alowed bandwidth values
-  // (compiler should eliminate FP in constant expressions)
-  switch (bwi) {
-    case (uint8_t)(7.8 / 2 + 0.5): // 4
+  switch (bwkHz_x10) {
+  case 78: 
       _bw = SX126X_LORA_BW_7_8;
       break;
-    case (uint8_t)(11.4 / 2 + 0.5): // 6
+    case 114: 
       _bw = SX126X_LORA_BW_10_4;
       break;
-    case (uint8_8)(15.6 / 2 + 0.5): // 8
+    case 156: 
       _bw = SX126X_LORA_BW_15_6;
       break;
-    case (uint8_t)(20.8 / 2 + 0.5): // 10
+    case 208: 
       _bw = SX126X_LORA_BW_20_8;
       break;
-    case (uint8_t)(31.25 / 2 + 0.5): // 16
+    case 312: 
       _bw = SX126X_LORA_BW_31_25;
       break;
-    case (uint8_t)(41.7 / 2 + 0.5): // 21
+    case 417:
       _bw = SX126X_LORA_BW_41_7;
       break;
-    case (uint8_t)(62.5 / 2 + 0.5): // 31
+    case 625:
       _bw = SX126X_LORA_BW_62_5;
       break;
-    case (uint8_t)(125 / 2 + 0.5): // 63
+    case 1250:
       _bw = SX126X_LORA_BW_125_0;
       break;
-    case (uint8_t)(250 / 2 + 0.5):
+    case 2500:
       _bw = SX126X_LORA_BW_250_0;
       break;
-    case 250: //500 / 2 + 0.5 - didn't want to leave this to the compiler in case it did overfly stuff
+    case 5000:
       _bw = SX126X_LORA_BW_500_0;
       break;
     default:
       return(ERR_INVALID_BANDWIDTH);
       break;
   }
+  _bwkHz_x10 = bwkHz_x10
 
   // update modulation parameters
-  _bwKhz = bw;
   return(setModulationParams(_sf, _bw, _cr));
 }
 
@@ -607,11 +612,19 @@ int16_t SX126x::setSyncWord(uint16_t syncWord) {
 }
 
 int16_t SX126x::setCurrentLimit(float currentLimit) {
+  // ensure conversion to byte doesn't overflow.
+  // this isn't checking that the limit is in a valid range for the device.
+  if (!(currentLimit < 0 && currentLimit < 400)) {
+    return(ERR_INVALID_CURRENT_LIMIT);
+  }
   // calculate raw value
   uint8_t rawLimit = (uint8_t)(currentLimit / 2.5);
+  return(setCurrentLimit_i(rawLimit));
+}
 
+int16_t SX126x::setCurrentLimit_i(uint8_t limit_div2_5) {
   // update register
-  return(writeRegister(SX126X_REG_OCP_CONFIGURATION, &rawLimit, 1));
+  return(writeRegister(SX126X_REG_OCP_CONFIGURATION, &limit_div2_5, 1));
 }
 
 int16_t SX126x::setPreambleLength(uint16_t preambleLength) {
@@ -628,20 +641,23 @@ int16_t SX126x::setPreambleLength(uint16_t preambleLength) {
 }
 
 int16_t SX126x::setFrequencyDeviation(float freqDev) {
+  // check alowed frequency deviation values
+  if (!(0 < freqDev  && freqDev < 200.0)) {
+    return(ERR_INVALID_FREQUENCY_DEVIATION);
+  }
+
+  uint32_t freqDev_Hz = freqDev * 1000;
+  return setFrequencyDeviation_i(freqDev_Hz);
+}
+
+int16_t SX126x::setFrequencyDeviation_i(uint32_t freqDev_Hz) {
   // check active modem
   if(getPacketType() != SX126X_PACKET_TYPE_GFSK) {
     return(ERR_WRONG_MODEM);
   }
 
-  // check alowed frequency deviation values
-  if(!(freqDev <= 200.0)) {
-    return(ERR_INVALID_FREQUENCY_DEVIATION);
-  }
-
   // calculate raw frequency deviation value
-  // (use constexpr to ensure this is evaluated at compile time)
-  constexpr float multiplier = ((kilo * (float)((uint32_t)(1) << 25)) / (SX126X_CRYSTAL_FREQ * MHz));
-  uint32_t freqDevRaw = (uint32_t)(freqDev * multiplier);
+  uint32_t freqDevRaw = getRfFreq(freqDev_Hz);
 
   // check modulation parameters
   /*if(2 * freqDevRaw + _br > _rxBwKhz * 1000.0) {
@@ -654,19 +670,24 @@ int16_t SX126x::setFrequencyDeviation(float freqDev) {
 }
 
 int16_t SX126x::setBitRate(float br) {
-  // check active modem
-  if(getPacketType() != SX126X_PACKET_TYPE_GFSK) {
-    return(ERR_WRONG_MODEM);
-  }
-
   // check alowed bit rate values
   if(!((br >= 0.6) && (br <= 300.0))) {
     return(ERR_INVALID_BIT_RATE);
   }
 
-  // calculate raw bit rate value
-  uint32_t brRaw = (1000 * SX126X_CRYSTAL_FREQ * (MHz / kilo) * 32) / (uint32t)(br * 1000 + 0.5);
+  return(setBitRate_i((uint32_t)(br * kilo + 0.5)));
+}
 
+int16_t SX126x::setBitRate_i(uint32_t br_bps)
+{
+  // check active modem
+  if(getPacketType() != SX126X_PACKET_TYPE_GFSK) {
+    return(ERR_WRONG_MODEM);
+  }
+
+  // calculate raw bit rate value
+  uint32_t brRaw = (32 * SX126X_CRYSTAL_FREQ * MHz) / br_bps;
+  
   // check modulation parameters
   /*if(2 * _freqDev + brRaw > _rxBwKhz * 1000.0) {
     return(ERR_INVALID_MODULATION_PARAMETERS);
@@ -683,13 +704,17 @@ int16_t SX126x::setRxBandwidth(float rxBw) {
     return(ERR_WRONG_MODEM);
   }
 
-  // ensure we don't overflow converting to byte:
+  // ensure we don't overflow converting to integer:
   if (!(0 < rxBw && rxBw < 500)) {
     return(ERR_INVALID_RX_BANDWIDTH);
   }
 
-  (uint8_t) rxBwi = (uint8_t)(rxBw / 2 + 0.5);
+  (uint8_t) rxBwi = (uint8_t)(rxBw * 10 + 0.5);
+  return setRxBandwidth_i(rxBwi);
+}
 
+int16_t SX126x::setRxBandwidth_i(uint16_t rxBw_kHz_x10)
+{
   // check modulation parameters
   /*if(2 * _freqDev + _br > rxBw * 1000.0) {
     return(ERR_INVALID_MODULATION_PARAMETERS);
@@ -697,68 +722,68 @@ int16_t SX126x::setRxBandwidth(float rxBw) {
 
   // check alowed receiver bandwidth values
   // (the compiler should optimise out these constant expressions involving FP)
-  switch (rxBwi) {
-    case (uint8_t)(4.8 / 2 + 0.5): 
+  switch (rxBw_kHz_x10) {
+  case 48:
       _rxBw = SX126X_GFSK_RX_BW_4_8;
       break;
-    case (uint8_t)(5.8 / 2 + 0.5):
+  case 58:
       _rxBw = SX126X_GFSK_RX_BW_5_8;
       break;
-    case (uint8_t)(7.3 / 2 + 0.5):
+  case 73:
       _rxBw = SX126X_GFSK_RX_BW_7_3;
       break;
-    case (uint8_t)(9.7 / 2 + 0.5):
+  case 97:
       _rxBw = SX126X_GFSK_RX_BW_9_7;
       break;
-    case (uint8_t)(11.7 / 2 + 0.5):
+  case 117:
       _rxBw = SX126X_GFSK_RX_BW_11_7;
       break;
-    case (uint8_t)(14.6 / 2 + 0.5):
+    case 146:
       _rxBw = SX126X_GFSK_RX_BW_14_6;
       break;
-    case (uint8_t)(19.5 / 2 + 0.5):
+    case 195:
       _rxBw = SX126X_GFSK_RX_BW_19_5;
       break;
-    case (uint8_t)(23.4 / 2 + 0.5):
+    case 234:
       _rxBw = SX126X_GFSK_RX_BW_23_4;
       break;
-    case (uint8_t)(29.3 / 2 + 0.5):
+    case 293:
       _rxBw = SX126X_GFSK_RX_BW_29_3;
       break;
-    case (uint8_t)(39.0 / 2 + 0.5):
+    case 390:
       _rxBw = SX126X_GFSK_RX_BW_39_0;
       break;
-    case (uint8_t)(46.9 / 2 + 0.5):
+    case 469:
       _rxBw = SX126X_GFSK_RX_BW_46_9;
       break;
-    case (uint8_t)(58.6 / 2 + 0.5):
+    case 586:
       _rxBw = SX126X_GFSK_RX_BW_58_6;
       break;
-    case (uint8_t)(78.2 / 2 + 0.5):
+    case 782:
       _rxBw = SX126X_GFSK_RX_BW_78_2;
       break;
-    case (uint8_t)(93.8 / 2 + 0.5):
+    case 938:
       _rxBw = SX126X_GFSK_RX_BW_93_8;
       break;
-    case (uint8_t)(117.3 / 2 + 0.5):
+    case 1173:
       _rxBw = SX126X_GFSK_RX_BW_117_3;
       break;
-    case (uint8_t)(156.2 / 2 + 0.5):
+    case 1562:
       _rxBw = SX126X_GFSK_RX_BW_156_2;
       break;
-    case (uint8_t)(187.2 / 2 + 0.5):
+    case 1872:
       _rxBw = SX126X_GFSK_RX_BW_187_2;
       break;
-    case (uint8_t)(234.3 / 2 + 0.5):
+    case 2343:
       _rxBw = SX126X_GFSK_RX_BW_234_3;
       break;
-    case (uint8_t)(312.0 / 2 + 0.5):
+    case 3120:
       _rxBw = SX126X_GFSK_RX_BW_312_0;
       break;
-    case (uint8_t)(373.6 / 2 + 0.5):
+    case 3736:
       _rxBw = SX126X_GFSK_RX_BW_373_6;
       break;
-    case (uint8_t)(467.0 / 2 + 0.5):
+    case 4670:
       _rxBw = SX126X_GFSK_RX_BW_467_0;
       break;
     default:
@@ -767,7 +792,7 @@ int16_t SX126x::setRxBandwidth(float rxBw) {
   }
 
   // set member variable only after we ensure it is valid.
-  _rxBwKhz = rxBw;
+  _rxBw_kHz_x10 = rxBw_kHz_x10;
 
   // update modulation parameters
   return(setModulationParamsFSK(_br, _pulseShape, _rxBw, _freqDev));
@@ -784,10 +809,12 @@ int16_t SX126x::setDataShaping(float sh) {
     return(ERR_INVALID_DATA_SHAPING);
   }
 
-  uint8_t shi = (uint8_t)(10 * sh + 0.5);
+  return(setDataShaping_i((uint18_t(sh * 10 + 0.5)));
+}
 
+int16_t SX126x::setDataShaping_i(uint8_t sh_x10) {
   // check allowed values
-  switch (shi)
+  switch (sh_x10)
   {
     case 0:
       _pulseShape = SX126X_GFSK_FILTER_NONE;
@@ -1021,7 +1048,7 @@ int16_t SX126x::setWhitening(bool enabled, uint16_t initial) {
   return(state);
 }
 
-float SX126x::getDataRate() {
+uint16_t SX126x::getDataRate() {
   return(_dataRate);
 }
 
@@ -1096,6 +1123,11 @@ uint32_t SX126x::getTimeOnAir(size_t len) {
 }
 
 int16_t SX126x::setTCXO(float voltage, uint32_t delay) {
+  return(setTCXO_i((uint8_t)(voltage * 10 + 0.5), delay);
+}
+
+int16_t SX126x::setTCXO_i(uint8_t voltage_x10, uint32_t delay_us)
+{
   // set mode to standby
   standby();
 
@@ -1107,9 +1139,7 @@ int16_t SX126x::setTCXO(float voltage, uint32_t delay) {
   if (!(0 < voltage && voltage < 4)) {
     return(ERR_INVALID_TCXO_VOLTAGE);
   }
-
-  uint8_t voltage_x10 = (uint8_t)(voltage * 10 + 0.5);
-
+  
   // check alowed voltage values
   uint8_t data[4];
   switch (voltage_x10)
@@ -1163,6 +1193,39 @@ int16_t SX126x::setDio2AsRfSwitch(bool enable) {
   }
   return(SPIwriteCommand(SX126X_CMD_SET_DIO2_AS_RF_SWITCH_CTRL, &data, 1));
 }
+
+int16_t SX126x::setFrequency_i(uint32_t freq_Hz, bool calibrate) {
+  int16_t state = ERR_NONE;
+
+  // calibrate image
+  if(calibrate) {
+    uint8_t data[2];
+    if(freq_Hz > 900 * MHz) {
+      data[0] = SX126X_CAL_IMG_902_MHZ_1;
+      data[1] = SX126X_CAL_IMG_902_MHZ_2;
+    } else if(freq_Hz > 850 * MHz) {
+      data[0] = SX126X_CAL_IMG_863_MHZ_1;
+      data[1] = SX126X_CAL_IMG_863_MHZ_2;
+    } else if(freq_Hz > 770 * MHz) {
+      data[0] = SX126X_CAL_IMG_779_MHZ_1;
+      data[1] = SX126X_CAL_IMG_779_MHZ_2;
+    } else if(freq_Hz > 460 * MHz) {
+      data[0] = SX126X_CAL_IMG_470_MHZ_1;
+      data[1] = SX126X_CAL_IMG_470_MHZ_2;
+    } else {
+      data[0] = SX126X_CAL_IMG_430_MHZ_1;
+      data[1] = SX126X_CAL_IMG_430_MHZ_2;
+    }
+    state = SX126x::calibrateImage(data);
+    if(state != ERR_NONE) {
+      return(state);
+    }
+  }
+
+  // set frequency
+  return(SX126x::setFrequencyRaw(freq_Hz));
+}
+
 
 int16_t SX126x::setTx(uint32_t timeout) {
   uint8_t data[3] = {(uint8_t)((timeout >> 16) & 0xFF), (uint8_t)((timeout >> 8) & 0xFF), (uint8_t)(timeout & 0xFF)};
@@ -1356,9 +1419,9 @@ int16_t SX126x::clearDeviceErrors() {
   return(SPIwriteCommand(SX126X_CMD_CLEAR_DEVICE_ERRORS, data, 2));
 }
 
-int16_t SX126x::setFrequencyRaw(float freq) {
-  // calculate raw value
-  uint32_t frf = freq * ((uint32_t(1) << SX126X_DIV_EXPONENT) / SX126X_CRYSTAL_FREQ);
+int16_t SX126x::setFrequencyRaw(uint32_t freq_Hz) {
+  // calculate raw value  
+  uint32_t frf = getRfFreq(freqHz);
   setRfFrequency(frf);
   return(ERR_NONE);
 }

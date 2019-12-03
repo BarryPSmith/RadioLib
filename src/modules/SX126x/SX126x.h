@@ -696,7 +696,7 @@ class SX126x: public PhysicalLayer {
 
       \returns Effective data rate in bps.
     */
-    float getDataRate();
+    uint16_t getDataRate();
 
     /*!
       \brief Gets RSSI (Recorded Signal Strength Indicator) of the last received packet.
@@ -751,6 +751,20 @@ class SX126x: public PhysicalLayer {
 #ifndef RADIOLIB_GODMODE
   protected:
 #endif
+    // integer versions of public float functions:
+    int16_t setCurrentLimit_i(uint8_t limit_mA_div2_5);
+    int16_t setBandwidth_i(uint16_t bwkHz_x10);
+    int16_t setFrequency_i(uint32_t freq_Hz, bool calibrate);
+    int16_t setFrequencyDeviation_i(uint32_t freqDev_Hz);
+    int16_t setBitRate_i(uint32_t br_bps);
+    int16_t setRxBandwidth_i(uint16_t rxBw_kHz_x10);
+    int16_t setDataShaping_i(uint8_t sh_x10);
+    int16_t setTCXO_i(uint8_t voltage_x10, uint32_t delay);
+
+    // this is a convenience function for anyone running god mode who wants to avoid floating point entirely:
+    int16_t begin_i(uint16_t bwKHz_x10, uint8_t sf, uint8_t cr, uint16_t syncWord, uint8_t currentLimit_mA_div2_5, uint16_t preambleLength, uint_8t tcxoVoltage_x10);
+    int16_t beginFSK_i(uint32_t br_bps, uint32_t freqDev_Hz, uint16_t rxBw_kHz_x10, uint8_t currentLimit_mA_div2_5, uint16_t preambleLength, uint8_t dataShaping_x10, uint8_t tcxoVoltage_x10);
+
     // SX1276x SPI command implementations
     int16_t setTx(uint32_t timeout = 0);
     int16_t setRx(uint32_t timeout);
@@ -777,9 +791,21 @@ class SX126x: public PhysicalLayer {
     uint16_t getDeviceErrors();
     int16_t clearDeviceErrors();
 
-    int16_t setFrequencyRaw(float freq);
+    int16_t setFrequencyRaw(uint32_t freq_Hz);
     int16_t setOptimalHiPowerPaConfig(int8_t* inOutPower);
     int16_t setPacketMode(uint8_t mode, uint8_t len);
+
+    inline uint32_t getRfFreq(const uint32_t freq_Hz) {
+      /* naiive implementation: frf = freq_Hz * (1 << 25) / (32 * 1000000) gives major overflow / underflow.
+     * freq_Hz could be as large as 960M (a little less than 2^30).
+     * We us the fact that 32MHz = 2^11 * 5^6 Hz.
+     * The logic below ensures we never exceed 2^32, and gives accuracy to about 30Hz.
+     * Floating point logic is accurate to 1 part in 2^24: about 80 Hz at 400MHz.
+     * This could be improved if we did * 4 / 5 a bunch, but would cost code space and time. 
+     * (30Hz in 400MHz is < 0.1ppm).
+     */
+      return (((((freq_Hz * 4) / 125) * 128) / 125) * 32);
+    }
 
     // fixes to errata
     int16_t fixSensitivity();
@@ -794,14 +820,14 @@ class SX126x: public PhysicalLayer {
 
     uint8_t _bw, _sf, _cr, _ldro, _crcType;
     uint16_t _preambleLength;
-    float _bwKhz; // note in many places we assume that this has no more than 1 significant digit after the decimal point
+    uint16_t _bwkHz_x10; // note in many places we assume that this has no more than 1 significant digit after the decimal point
 
     uint32_t _br, _freqDev;
     uint8_t _rxBw, _pulseShape, _crcTypeFSK, _syncWordLength, _addrComp, _whitening, _packetType;
     uint16_t _preambleLengthFSK;
-    float _rxBwKhz;
+    uint16_t _rxBwKhz_x10;
 
-    float _dataRate;
+    uint16_t _dataRate;
 
     int16_t config(uint8_t modem);
 
@@ -811,6 +837,11 @@ class SX126x: public PhysicalLayer {
     int16_t SPIreadCommand(uint8_t cmd, uint8_t* data, uint8_t numBytes, bool waitForBusy = true);
     int16_t SPIreadCommand(uint8_t* cmd, uint8_t cmdLen, uint8_t* data, uint8_t numBytes, bool waitForBusy = true);
     int16_t SPItransfer(uint8_t* cmd, uint8_t cmdLen, bool write, uint8_t* dataOut, uint8_t* dataIn, uint8_t numBytes, bool waitForBusy, uint32_t timeout = 5000);
+
+    // not sure where these belong. Leaving them here for now.
+    static constexpr uint32_t usPerSecond = 1000000; // as in "microseconds per second".
+    static constexpr uint32_t kilo = 1000; // as in "kilohertz". But for dimensional analysis it works better to call it kilo.
+    static constexpr uint32_t MHz = 1000000;
 };
 
 #endif

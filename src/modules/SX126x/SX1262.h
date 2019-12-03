@@ -96,6 +96,14 @@ class SX1262: public SX126x {
 #ifndef RADIOLIB_GODMODE
   private:
 #endif
+    int16_t begin_i(uint32_t freq_Hz, uint16_t bwKHz_x10, uint8_t sf, uint8_t cr, 
+      uint16_t syncWord, int8_t power, uint8_t currentLimit_mA_div2_5, 
+      uint16_t preambleLength, uint_8t tcxoVoltage_x10);
+
+    int16_t beginFSK_i(uint32_t freq_Hz, uint32_t br_bps, uint16_t rxBw_kHz_x10, 
+      int8_t power, uint8_t currentLimit_mA_div2_5, uint16_t preambleLength, 
+      uint8_t datashaping_x10, uint8_t tcxoVoltage_x10);
+
 
 };
 
