@@ -5,15 +5,11 @@ ISerial::ISerial(Module* mod) {
 }
 
 void ISerial::begin(long speed) {
-#if defined(ESP8266)
-  _mod->ModuleSerial->begin(speed, _mod->getRx(), _mod->getTx(), SWSERIAL_8N1);
-#else
   _mod->ModuleSerial->begin(speed);
-#endif
 }
 
 bool ISerial::listen() {
-#ifdef SOFTWARE_SERIAL_UNSUPPORTED
+#ifdef RADIOLIB_SOFTWARE_SERIAL_UNSUPPORTED
   return true;
 #else
   return(_mod->ModuleSerial->listen());
@@ -25,7 +21,7 @@ void ISerial::end() {
 }
 
 bool ISerial::isListening() {
-#ifdef SOFTWARE_SERIAL_UNSUPPORTED
+#ifdef RADIOLIB_SOFTWARE_SERIAL_UNSUPPORTED
   return true;
 #else
   return(_mod->ModuleSerial->isListening());
@@ -33,7 +29,7 @@ bool ISerial::isListening() {
 }
 
 bool ISerial::stopListening() {
-#ifdef SOFTWARE_SERIAL_UNSUPPORTED
+#ifdef RADIOLIB_SOFTWARE_SERIAL_UNSUPPORTED
   return true;
 #else
   return(_mod->ModuleSerial->stopListening());
@@ -41,7 +37,7 @@ bool ISerial::stopListening() {
 }
 
 bool ISerial::overflow() {
-#ifdef SOFTWARE_SERIAL_UNSUPPORTED
+#ifdef RADIOLIB_SOFTWARE_SERIAL_UNSUPPORTED
   return false;
 #else
   return(_mod->ModuleSerial->overflow());

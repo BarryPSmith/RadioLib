@@ -20,9 +20,8 @@
 // SX1262 has the following connections:
 // NSS pin:   10
 // DIO1 pin:  2
-// DIO2 pin:  3
 // BUSY pin:  9
-SX1262 lora = new Module(10, 2, 3, 9);
+SX1262 lora = new Module(10, 2, 9);
 
 // save transmission state between loops
 int transmissionState = ERR_NONE;
@@ -40,6 +39,7 @@ void setup() {
   // output power:                14 dBm
   // current limit:               60 mA
   // preamble length:             8 symbols
+  // TCXO voltage:                1.6 V (set to 0 to not use TCXO)
   // CRC:                         enabled
   int state = lora.begin();
   if (state == ERR_NONE) {
