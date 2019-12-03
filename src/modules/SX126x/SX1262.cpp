@@ -5,12 +5,12 @@ SX1262::SX1262(Module* mod) : SX126x(mod) {
 }
 
 int16_t SX1262::begin(float freq, float bw, uint8_t sf, uint8_t cr, uint16_t syncWord, int8_t power, float currentLimit, uint16_t preambleLength, float tcxoVoltage) {
-  return (begin_i(freq * MHz, bw * 10 + 0.5, sf, cr, syncWord, power, currentLimit / 2.5 + 0.5, preambleLength, txCoVoltage * 10 + 0.5);
+  return(begin_i(freq * MHz, bw * 10 + 0.5, sf, cr, syncWord, power, currentLimit / 2.5 + 0.5, preambleLength, tcxoVoltage * 10 + 0.5));
 }
 
-int16_t SX1262::begin_i(uint32_t freq_Hz, uint16_t bwKHz_x10, uint8_t sf, uint8_t cr, 
-      uint16_t syncWord, int8_t power, uint8_t currentLimit_mA_div2_5, 
-      uint16_t preambleLength, uint_8t tcxoVoltage_x10) {
+int16_t SX1262::begin_i(uint32_t freq_Hz, uint16_t bwkHz_x10, uint8_t sf, uint8_t cr,
+      uint16_t syncWord, int8_t power, uint8_t currentLimit_mA_div2_5,
+      uint16_t preambleLength, uint8_t tcxoVoltage_x10) {
   // execute common part
   int16_t state = SX126x::begin_i(bwkHz_x10, sf, cr, syncWord, currentLimit_mA_div2_5, preambleLength, tcxoVoltage_x10);
   if(state != ERR_NONE) {
@@ -18,7 +18,7 @@ int16_t SX1262::begin_i(uint32_t freq_Hz, uint16_t bwKHz_x10, uint8_t sf, uint8_
   }
 
   // configure publicly accessible settings
-  state = setFrequency_i(freq_Hz);
+  state = setFrequency_i(freq_Hz, true);
   if(state != ERR_NONE) {
     return(state);
   }
@@ -37,11 +37,11 @@ int16_t SX1262::begin_i(uint32_t freq_Hz, uint16_t bwKHz_x10, uint8_t sf, uint8_
 }
 
 int16_t SX1262::beginFSK(float freq, float br, float freqDev, float rxBw, int8_t power, float currentLimit, uint16_t preambleLength, float dataShaping, float tcxoVoltage) {
-  return(SX1262::beginFSK_i(freq * MHz, br * kilo + 0.5, rxBw * 10 + 0.5, power, currentLimit / 2.5 + 0.5, preambleLength, dataShaping * 10 + 0.5, tcxoVoltage * 10 + 0.5));
+  return(SX1262::beginFSK_i(freq * MHz, br * kilo + 0.5, freqDev * kilo + 0.5, rxBw * 10 + 0.5, power, currentLimit / 2.5 + 0.5, preambleLength, dataShaping * 10 + 0.5, tcxoVoltage * 10 + 0.5));
 }
 
-int16_t SX1262::beginFSK_i(uint32_t freq_Hz, uint32_t freqDev_Hz, uint32_t br_bps, uint16_t rxBw_kHz_x10, 
-      int8_t power, uint8_t currentLimit_mA_div2_5, uint16_t preambleLength, 
+int16_t SX1262::beginFSK_i(uint32_t freq_Hz, uint32_t br_bps, uint32_t freqDev_Hz, uint16_t rxBw_kHz_x10,
+      int8_t power, uint8_t currentLimit_mA_div2_5, uint16_t preambleLength,
       uint8_t dataShaping_x10, uint8_t tcxoVoltage_x10)
 {
   // execute common part
@@ -51,7 +51,7 @@ int16_t SX1262::beginFSK_i(uint32_t freq_Hz, uint32_t freqDev_Hz, uint32_t br_bp
   }
 
   // configure publicly accessible settings
-  state = setFrequency_i(freq_Hz);
+  state = SX1262::setFrequency_i(freq_Hz, true);
   if(state != ERR_NONE) {
     return(state);
   }
@@ -77,15 +77,15 @@ int16_t SX1262::setFrequency(float freq, bool calibrate) {
   return(SX1262::setFrequency_i((uint32_t)(freq * 1000000), calibrate));
 }
 
-int16_t SX126x::setFrequency_i(uint32_t freq_Hz, bool calibrate) {
+int16_t SX1262::setFrequency_i(uint32_t freq_Hz, bool calibrate) {
   // check for valid range:
   if (freq_Hz < 150 * MHz || freq_Hz > 960 * MHz) {
     return(ERR_INVALID_FREQUENCY);
   }
-  return(SX126x::setFrequency_i(freq_Hz, bool calibrate));
+  return(SX126x::setFrequency_i(freq_Hz, calibrate));
 }
 
-  
+
 int16_t SX1262::setOutputPower(int8_t power) {
   // check allowed power range
   if (!((power >= -17) && (power <= 22))) {

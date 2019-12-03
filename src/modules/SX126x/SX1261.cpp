@@ -1,11 +1,11 @@
 #include "SX1261.h"
 
-SX1261::SX1261(Module* mod) 
+SX1261::SX1261(Module* mod)
   : SX1262(mod) {
 
 }
 
-int16_t SX1261::setOutputPower(int8_t power) {  
+int16_t SX1261::setOutputPower(int8_t power) {
   // check allowed power range
   if (!((power >= -17) && (power <= 14))) {
     return(ERR_INVALID_OUTPUT_POWER);
