@@ -131,6 +131,7 @@ class Module {
 
       \param gpio GPIO/interrupt pins to be used on the module. See \ref uart_config for details.
     */
+#if 0
     template<uint8_t interface>
     void init(uint8_t gpio){
       // select interface
@@ -169,7 +170,9 @@ class Module {
           break;
       }
     }
-
+#else
+    void init(uint8_t interface, uint8_t gpio);
+#endif
     /*!
       \brief Terminate low-level module control.
     */

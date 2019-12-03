@@ -848,7 +848,7 @@ class SX126x: public PhysicalLayer {
 
     bool _bailIfBusy = false;
 
-    //int16_t config(uint8_t modem);
+    int16_t config(uint8_t modem);
     
     // these statics could be duplicated to allow multiple instances of SX126x to listen simultaneously
     static SX126x* pCurrentReceiver;
