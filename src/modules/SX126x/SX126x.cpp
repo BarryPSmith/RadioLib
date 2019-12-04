@@ -1090,11 +1090,6 @@ int16_t SX126x::variablePacketLengthMode(uint8_t maxLen) {
   return(setPacketMode(SX126X_GFSK_PACKET_VARIABLE, maxLen));
 }
 
-// Ceiling of a number when divided by 4.
-// Placed into a separate function to keep the calculation of nSymbol_x4 somewhat readable.
-static inline uint16_t ceil4(uint16_t inValue) {
-  return(4 * ((inValue + 3) / 4));
-}
 
 uint32_t SX126x::getTimeOnAir(size_t len) {
   if(getPacketType() == SX126X_PACKET_TYPE_LORA) {
@@ -1102,10 +1097,10 @@ uint32_t SX126x::getTimeOnAir(size_t len) {
     // Some constants are multiplied by 4, these have _x4 to indicate that fact.
     uint32_t symbolLength_us = ((10 * usPerSecond / kilo) << _sf) / _bwkHz_x10 ;
     uint8_t sfCoeff1_x4 = 17; // (4.25 * 4)
-    uint8_t sfCoeff2_x4 = 8 * 4;
+    uint8_t sfCoeff2 = 8;
     if(_sf == 5 || _sf == 6) {
       sfCoeff1_x4 = 25; //6.25 * 4
-      sfCoeff2_x4 = 0;
+      sfCoeff2 = 0;
     }
     uint8_t sfDivisor = 4*_sf;
     if(symbolLength_us >= 16000) {
@@ -1114,10 +1109,17 @@ uint32_t SX126x::getTimeOnAir(size_t len) {
     const uint8_t bitsPerCrc = 16;
     const uint8_t N_symbol_header = 20;
 
-    // preamble can be 65k. Therefore nSymbol needs to be 32 bit.
-    uint32_t nSymbol_x4 = (_preambleLength + 8) * 4 + sfCoeff1_x4 +
-      ceil4(max((8 * len + (_crcType * bitsPerCrc ) - 4 * _sf + N_symbol_header) * 4 + sfCoeff2_x4, 0) / sfDivisor) * (_cr + 4);
-    return((symbolLength_us * nSymbol_x4) / 4000);
+    // numerator of equation in section 6.1.4 of datasheet (might not actually be bitcount, but it has len * 8.)
+    int16_t bitCount = (int16_t) 8 * len + _crcType * bitsPerCrc - 4 * _sf  + sfCoeff2 + N_symbol_header;
+    // in the datasheet, this is done as max(bitCount, 0)
+    if (bitCount < 0)
+      bitCount = 0;
+    // add (sfDivisor) - 1 to the numerator to give integer CEIL(...).
+    uint16_t nPreCodedSymbols = (bitCount + (sfDivisor - 1)) / (sfDivisor); 
+    // preamble can be 65k. Therefore nSymbol_x4 needs to be 32 bit.
+    uint32_t nSymbol_x4 = (_preambleLength + 8) * 4 + sfCoeff1_x4 + nPreCodedSymbols * (_cr + 4) * 4;
+
+    return((symbolLength_us * nSymbol_x4) / 4);
   } else {
     //float brBps = (SX126X_CRYSTAL_FREQ * MHz * 32) / (float)_br;
     //return((uint32_t)(((len * 8.0) / brBps) * microPer));
