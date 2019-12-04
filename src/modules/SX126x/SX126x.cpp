@@ -14,7 +14,11 @@ void recordState(int i)
 SX126x* SX126x::pCurrentReceiver;
 SX126x* SX126x::pCurrentTransmitter;
 
+#if 0
 SX126x::SX126x(Module* mod) : PhysicalLayer(SX126X_CRYSTAL_FREQ, SX126X_DIV_EXPONENT, SX126X_MAX_PACKET_LENGTH) {
+#else
+SX126x::SX126x(Module* mod) {
+#endif
   _mod = mod;
 }
 

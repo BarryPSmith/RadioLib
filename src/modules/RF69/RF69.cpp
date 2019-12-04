@@ -1,6 +1,10 @@
 #include "RF69.h"
 
+#if 0
 RF69::RF69(Module* module) : PhysicalLayer(RF69_CRYSTAL_FREQ, RF69_DIV_EXPONENT, RF69_MAX_PACKET_LENGTH)  {
+#else
+RF69::RF69(Module* module) {
+#endif
   _mod = module;
   _tempOffset = 0;
 

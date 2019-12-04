@@ -425,6 +425,7 @@
 
   \brief Control class for %RF69 module. Also serves as base class for SX1231.
 */
+#if 0
 class RF69: public PhysicalLayer {
   public:
     // introduce PhysicalLayer overloads
@@ -432,6 +433,10 @@ class RF69: public PhysicalLayer {
     using PhysicalLayer::receive;
     using PhysicalLayer::startTransmit;
     using PhysicalLayer::readData;
+#else
+class RF69 {
+  public:
+#endif
 
     /*!
       \brief Default constructor.

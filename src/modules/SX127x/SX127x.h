@@ -529,6 +529,7 @@
   \brief Base class for SX127x series. All derived classes for SX127x (e.g. SX1278 or SX1272) inherit from this base class.
   This class should not be instantiated directly from Arduino sketch, only from its derived classes.
 */
+#if 0
 class SX127x: public PhysicalLayer {
   public:
     // introduce PhysicalLayer overloads
@@ -536,6 +537,10 @@ class SX127x: public PhysicalLayer {
     using PhysicalLayer::receive;
     using PhysicalLayer::startTransmit;
     using PhysicalLayer::readData;
+#else
+class SX127x {
+  public:
+#endif
 
     // constructor
 
