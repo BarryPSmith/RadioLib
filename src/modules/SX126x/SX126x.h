@@ -794,11 +794,16 @@ class SX126x: public PhysicalLayer {
     int16_t setBitRate_i(uint32_t br_bps);
     int16_t setRxBandwidth_i(uint16_t rxBw_kHz_x10);
     int16_t setDataShaping_i(uint8_t sh_x10);
-    int16_t setTCXO_i(uint8_t voltage_x10, uint32_t delay);
+    int16_t setTCXO_i(uint8_t voltage_x10, uint32_t delay = 5000);
 
     // this is a convenience function for anyone running god mode who wants to avoid floating point entirely:
-    int16_t begin_i(uint16_t bwKHz_x10, uint8_t sf, uint8_t cr, uint16_t syncWord, uint8_t currentLimit_mA_div2_5, uint16_t preambleLength, uint_8t tcxoVoltage_x10);
+    int16_t begin_i(uint16_t bwKHz_x10, uint8_t sf, uint8_t cr, uint16_t syncWord, uint8_t currentLimit_mA_div2_5, uint16_t preambleLength, uint8_t tcxoVoltage_x10);
     int16_t beginFSK_i(uint32_t br_bps, uint32_t freqDev_Hz, uint16_t rxBw_kHz_x10, uint8_t currentLimit_mA_div2_5, uint16_t preambleLength, uint8_t dataShaping_x10, uint8_t tcxoVoltage_x10);
+
+    // not sure where these belong. Leaving them here for now.
+    static constexpr uint32_t usPerSecond = 1000000; // as in "microseconds per second".
+    static constexpr uint32_t kilo = 1000; // as in "kilohertz". But for dimensional analysis it works better to call it kilo.
+    static constexpr uint32_t MHz = 1000000;
 
     // SX1276x SPI command implementations
     int16_t setTx(uint32_t timeout = 0);
@@ -838,7 +843,7 @@ class SX126x: public PhysicalLayer {
      * We us the fact that 32MHz = 2^11 * 5^6 Hz.
      * The logic below ensures we never exceed 2^32, and gives accuracy to about 30Hz.
      * Floating point logic is accurate to 1 part in 2^24: about 80 Hz at 400MHz.
-     * This could be improved if we did * 4 / 5 a bunch, but would cost code space and time. 
+     * This could be improved if we did * 4 / 5 a bunch, but would cost code space and time.
      * (30Hz in 400MHz is < 0.1ppm).
      */
       return (((((freq_Hz * 4) / 125) * 128) / 125) * 32);

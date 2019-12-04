@@ -22,7 +22,8 @@ int16_t SX126x::begin(float bw, uint8_t sf, uint8_t cr, uint16_t syncWord, float
   return(begin_i(bw * 10 + 0.1, sf, cr, syncWord, currentLimit / 2.5, preambleLength, tcxoVoltage * 10 + 0.5));
 }
 
-int16_t SX126x::begin_i(uint16_t bwkHz_x10, uint8_t sf, uint8_t cr, uint16_t syncWord, uint8_t currentLimit_mA_div2_5, uint16_t preambleLength, uint_8t tcxoVoltage_x10) {
+int16_t SX126x::begin_i(uint16_t bwkHz_x10, uint8_t sf, uint8_t cr, uint16_t syncWord,
+  uint8_t currentLimit_mA_div2_5, uint16_t preambleLength, uint8_t tcxoVoltage_x10) {
   // set module properties
   _mod->init(RADIOLIB_USE_SPI, RADIOLIB_INT_BOTH);
 
@@ -98,7 +99,9 @@ int16_t SX126x::beginFSK(float br, float freqDev, float rxBw, float currentLimit
   return(beginFSK_i(br * 1000 + 0.5, freqDev * 1000 + 0.5, rxBw * 10 + 0.5, currentLimit / 2.5 + 0.5, preambleLength, dataShaping * 10 + 0.5, tcxoVoltage * 10 + 0.5));
 }
 
-int16_t SX126x::beginFSK_i(uint32_t br_bps, uint32_t freqDev_Hz, uint16_t rxBw_kHz_x10, uint8_t currentLimit_mA_div2_5, uint16_t preambleLength, uint8_t dataShaping_x10, uint8_t tcxoVoltage_x10) {
+int16_t SX126x::beginFSK_i(uint32_t br_bps, uint32_t freqDev_Hz, uint16_t rxBw_kHz_x10,
+  uint8_t currentLimit_mA_div2_5, uint16_t preambleLength, uint8_t dataShaping_x10,
+  uint8_t tcxoVoltage_x10) {
   // set module properties
   _mod->init(RADIOLIB_USE_SPI, RADIOLIB_INT_BOTH);
 
@@ -125,7 +128,7 @@ int16_t SX126x::beginFSK_i(uint32_t br_bps, uint32_t freqDev_Hz, uint16_t rxBw_k
   }
 
   // set TCXO control, if requested
-  if(tcxoVoltage > 0.0) {
+  if(tcxoVoltage_x10 > 0) {
     state = setTCXO_i(tcxoVoltage_x10);
     if(state != ERR_NONE) {
       return(state);
@@ -257,7 +260,7 @@ int16_t SX126x::receive(uint8_t* data, size_t len) {
   uint8_t modem = getPacketType();
   if(modem == SX126X_PACKET_TYPE_LORA) {
     // calculate timeout (100 LoRa symbols, the default for SX127x series)
-    uint32_t symbolLength_us = ((10 * usPerSecond / kilo) << _sf) / ((uint32_t)(_bwKhz * 10 + 0.5));
+    uint32_t symbolLength_us = ((10 * usPerSecond / kilo) << _sf) / (_bwkHz_x10);
     timeout = symbolLength_us * 100;
 
   } else if(modem == SX126X_PACKET_TYPE_GFSK) {
@@ -746,25 +749,25 @@ int16_t SX126x::setBandwidth(float bw) {
   }
 
   //note we add 0.1 here to ensure we end up with 312 instead of 313 if supplied 31.25
-  return(setBandwidth_i((uint16_t)bw * 10 + 0.1));
+  return(setBandwidth_i((uint16_t)(bw * 10 + 0.1)));
 }
 
 int16_t SX126x::setBandwidth_i(uint16_t bwkHz_x10) {
   // check alowed bandwidth values
   switch (bwkHz_x10) {
-  case 78: 
+  case 78:
       _bw = SX126X_LORA_BW_7_8;
       break;
-    case 114: 
+    case 114:
       _bw = SX126X_LORA_BW_10_4;
       break;
-    case 156: 
+    case 156:
       _bw = SX126X_LORA_BW_15_6;
       break;
-    case 208: 
+    case 208:
       _bw = SX126X_LORA_BW_20_8;
       break;
-    case 312: 
+    case 312:
       _bw = SX126X_LORA_BW_31_25;
       break;
     case 417:
@@ -786,7 +789,7 @@ int16_t SX126x::setBandwidth_i(uint16_t bwkHz_x10) {
       return(ERR_INVALID_BANDWIDTH);
       break;
   }
-  _bwkHz_x10 = bwkHz_x10
+  _bwkHz_x10 = bwkHz_x10;
 
   // update modulation parameters
   return(setModulationParams(_sf, _bw, _cr));
@@ -911,7 +914,7 @@ int16_t SX126x::setBitRate_i(uint32_t br_bps)
 
   // calculate raw bit rate value
   uint32_t brRaw = (32 * SX126X_CRYSTAL_FREQ * MHz) / br_bps;
-  
+
   // check modulation parameters
   /*if(2 * _freqDev + brRaw > _rxBwKhz * 1000.0) {
     return(ERR_INVALID_MODULATION_PARAMETERS);
@@ -933,7 +936,7 @@ int16_t SX126x::setRxBandwidth(float rxBw) {
     return(ERR_INVALID_RX_BANDWIDTH);
   }
 
-  (uint8_t) rxBwi = (uint8_t)(rxBw * 10 + 0.5);
+  uint8_t rxBwi = (uint8_t)(rxBw * 10 + 0.5);
   return setRxBandwidth_i(rxBwi);
 }
 
@@ -1016,7 +1019,7 @@ int16_t SX126x::setRxBandwidth_i(uint16_t rxBw_kHz_x10)
   }
 
   // set member variable only after we ensure it is valid.
-  _rxBw_kHz_x10 = rxBw_kHz_x10;
+  _rxBwKhz_x10 = rxBw_kHz_x10;
 
   // update modulation parameters
   return(setModulationParamsFSK(_br, _pulseShape, _rxBw, _freqDev));
@@ -1033,7 +1036,7 @@ int16_t SX126x::setDataShaping(float sh) {
     return(ERR_INVALID_DATA_SHAPING);
   }
 
-  return(setDataShaping_i((uint18_t(sh * 10 + 0.5)));
+  return(setDataShaping_i((uint8_t)(sh * 10 + 0.5)));
 }
 
 int16_t SX126x::setDataShaping_i(uint8_t sh_x10) {
@@ -1276,6 +1279,7 @@ uint16_t SX126x::getDataRate() {
   return(_dataRate);
 }
 
+
 float SX126x::getRSSI() {
   // get last packet RSSI from packet status
   uint32_t packetStatus = getPacketStatus();
@@ -1328,22 +1332,17 @@ int16_t SX126x::variablePacketLengthMode(uint8_t maxLen) {
   return(setPacketMode(SX126X_GFSK_PACKET_VARIABLE, maxLen));
 }
 
-// Ceiling of a number when divided by 4.
-// Placed into a separate function to keep the calculation of nSymbol_x4 somewhat readable.
-inline uint16_t ceil4(uint16_t inValue) {
-  return(4 * ((inValue + 3) / 4));
-}
 
 uint32_t SX126x::getTimeOnAir(size_t len) {
   if(getPacketType() == SX126X_PACKET_TYPE_LORA) {
     // Everything is working in microseconds to allow integer arithmetic
     // Some constants are multiplied by 4, these have _x4 to indicate that fact.
-    uint32_t symbolLength_us = ((10 * usPerSecond / kilo) << _sf) / ((uint32_t)(_bwKhz * 10 + 0.5));
+    uint32_t symbolLength_us = ((10 * usPerSecond / kilo) << _sf) / _bwkHz_x10 ;
     uint8_t sfCoeff1_x4 = 17; // (4.25 * 4)
-    uint8_t sfCoeff2_x4 = 8 * 4;
+    uint8_t sfCoeff2 = 8;
     if(_sf == 5 || _sf == 6) {
       sfCoeff1_x4 = 25; //6.25 * 4
-      sfCoeff2_x4 = 0;
+      sfCoeff2 = 0;
     }
     uint8_t sfDivisor = 4*_sf;
     if(symbolLength_us >= 16000) {
@@ -1351,11 +1350,18 @@ uint32_t SX126x::getTimeOnAir(size_t len) {
     }
     const uint8_t bitsPerCrc = 16;
     const uint8_t N_symbol_header = 20;
-    
-    // preamble can be 65k. Therefore nSymbol needs to be 32 bit.
-    uint32_t nSymbol_x4 = (_preambleLength + 8) * 4 + sfCoeff1_x4 + 
-      cel4(max((8 * len + (_crcType * bitsPerCrc ) - 4 * _sf + N_symbol_header) * 4 + sfCoeff2_x4, 0) / sfDivisor) * (_cr + 4);
-    return((symbolLength_us * nSymbol_x4 / 4000);
+
+    // numerator of equation in section 6.1.4 of datasheet (might not actually be bitcount, but it has len * 8.)
+    int16_t bitCount = (int16_t) 8 * len + _crcType * bitsPerCrc - 4 * _sf  + sfCoeff2 + N_symbol_header;
+    // in the datasheet, this is done as max(bitCount, 0)
+    if (bitCount < 0)
+      bitCount = 0;
+    // add (sfDivisor) - 1 to the numerator to give integer CEIL(...).
+    uint16_t nPreCodedSymbols = (bitCount + (sfDivisor - 1)) / (sfDivisor); 
+    // preamble can be 65k. Therefore nSymbol_x4 needs to be 32 bit.
+    uint32_t nSymbol_x4 = (_preambleLength + 8) * 4 + sfCoeff1_x4 + nPreCodedSymbols * (_cr + 4) * 4;
+
+    return((symbolLength_us * nSymbol_x4) / 4);
   } else {
     //float brBps = (SX126X_CRYSTAL_FREQ * MHz * 32) / (float)_br;
     //return((uint32_t)(((len * 8.0) / brBps) * microPer));
@@ -1370,7 +1376,11 @@ void SX126x::enableIsChannelBusy()
 }
 
 int16_t SX126x::setTCXO(float voltage, uint32_t delay) {
-  return(setTCXO_i((uint8_t)(voltage * 10 + 0.5), delay);
+  //Ensure we don't overflow converting to integer:
+  if (!(0 < voltage && voltage < 4)) {
+    return(ERR_INVALID_TCXO_VOLTAGE);
+  }
+  return(setTCXO_i((uint8_t)(voltage * 10 + 0.5), delay));
 }
 
 int16_t SX126x::setTCXO_i(uint8_t voltage_x10, uint32_t delay_us)
@@ -1382,11 +1392,11 @@ int16_t SX126x::setTCXO_i(uint8_t voltage_x10, uint32_t delay_us)
   if(getDeviceErrors() & SX126X_XOSC_START_ERR) {
     clearDeviceErrors();
   }
-  
-  if (!(0 < voltage && voltage < 4)) {
+
+  if (!(0 < voltage_x10 && voltage_x10 < 40)) {
     return(ERR_INVALID_TCXO_VOLTAGE);
   }
-  
+
   // check alowed voltage values
   uint8_t data[4];
   switch (voltage_x10)
@@ -1420,7 +1430,7 @@ int16_t SX126x::setTCXO_i(uint8_t voltage_x10, uint32_t delay_us)
   }
 
   // calculate delay
-  uint32_t delayValue = delay * 8 / 125; // equivalent to "/ 15.625"
+  uint32_t delayValue = delay_us * 8 / 125; // equivalent to "/ 15.625"
   data[1] = (uint8_t)((delayValue >> 16) & 0xFF);
   data[2] = (uint8_t)((delayValue >> 8) & 0xFF);
   data[3] = (uint8_t)(delayValue & 0xFF);
@@ -1611,7 +1621,7 @@ int16_t SX126x::setPacketMode(uint8_t mode, uint8_t len) {
 int16_t SX126x::setModulationParams(uint8_t sf, uint8_t bw, uint8_t cr, uint8_t ldro) {
   // calculate symbol length and enable low data rate optimization, if needed
   if(ldro == 0xFF) {
-    uint32_t symbolLength_us = ((10 * usPerSecond / kilo) << _sf) / ((uint32_t)(_bwKhz * 10 + 0.5));
+    uint32_t symbolLength_us = ((10 * usPerSecond / kilo) << _sf) / _bwkHz_x10;
     RADIOLIB_DEBUG_PRINT("Symbol length: ");
     RADIOLIB_DEBUG_PRINT(symbolLength_us);
     RADIOLIB_DEBUG_PRINTLN(" \xe6s"); //microseconds
@@ -1677,8 +1687,8 @@ int16_t SX126x::clearDeviceErrors() {
 }
 
 int16_t SX126x::setFrequencyRaw(uint32_t freq_Hz) {
-  // calculate raw value  
-  uint32_t frf = getRfFreq(freqHz);
+  // calculate raw value
+  uint32_t frf = getRfFreq(freq_Hz);
   setRfFrequency(frf);
   return(ERR_NONE);
 }
@@ -1695,7 +1705,7 @@ int16_t SX126x::fixSensitivity() {
   }
 
   // fix the value for LoRa with 500 kHz bandwidth
-  if((getPacketType() == SX126X_PACKET_TYPE_LORA) && ((uint16_t)(_bwKhz + 0.5) == 500)) {
+  if((getPacketType() == SX126X_PACKET_TYPE_LORA) && (_rxBwKhz_x10 == 5000)) {
     sensitivityConfig &= 0xFB;
   } else {
     sensitivityConfig |= 0x04;
