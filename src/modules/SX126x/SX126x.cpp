@@ -1271,7 +1271,7 @@ int16_t SX126x::setWhitening(bool enabled, uint16_t initial) {
     if(state != ERR_NONE) {
       return(state);
     }
-  }
+  } 
   return(state);
 }
 

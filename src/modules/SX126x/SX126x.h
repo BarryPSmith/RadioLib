@@ -907,10 +907,6 @@ class SX126x: public PhysicalLayer {
     
     int16_t SPItransfer(uint8_t* cmd, uint8_t cmdLen, bool write, uint8_t* dataOut, uint8_t* dataIn, uint8_t numBytes, bool waitForBusy, uint32_t timeout = 5000,
       bool rdSkipFirstByte = true);
-    // not sure where these belong. Leaving them here for now.
-    static constexpr uint32_t usPerSecond = 1000000; // as in "microseconds per second".
-    static constexpr uint32_t kilo = 1000; // as in "kilohertz". But for dimensional analysis it works better to call it kilo.
-    static constexpr uint32_t MHz = 1000000;
 };
 
 #endif
