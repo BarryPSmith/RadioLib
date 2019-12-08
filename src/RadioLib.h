@@ -38,8 +38,10 @@
 #include "TypeDef.h"
 #include "Module.h"
 
+#if 0 //Just a bit much on every build.
 #ifdef RADIOLIB_GODMODE
   #warning "God mode active, I hope it was intentional. Buckle up, lads."
+#endif
 #endif
 
 #include "modules/CC1101/CC1101.h"

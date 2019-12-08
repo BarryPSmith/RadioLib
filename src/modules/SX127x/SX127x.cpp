@@ -1,6 +1,10 @@
 #include "SX127x.h"
 
+#if 0
 SX127x::SX127x(Module* mod) : PhysicalLayer(SX127X_CRYSTAL_FREQ, SX127X_DIV_EXPONENT, SX127X_MAX_PACKET_LENGTH) {
+#else
+SX127x::SX127x(Module* mod) {
+#endif
   _mod = mod;
   _packetLengthQueried = false;
 }

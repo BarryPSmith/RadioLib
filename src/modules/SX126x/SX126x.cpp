@@ -1,16 +1,5 @@
 #include "SX126x.h"
 
-#ifdef DEBUG 
-// a handy debugging tool for ISRs where Serial is unavailable.
-void recordState(int i)
-{
-  digitalWrite(5, i & 1 ? 1 : 0);
-  digitalWrite(6, i & 2 ? 1 : 0);
-  digitalWrite(7, i & 4 ? 1 : 0);
-  digitalWrite(8, i & 8 ? 1 : 0);
-}
-#endif
-
 SX126x* SX126x::pCurrentReceiver;
 SX126x* SX126x::pCurrentTransmitter;
 
@@ -423,7 +412,6 @@ int16_t SX126x::isChannelBusy(bool scanIfInRx) {
   }
 
   int16_t ret = scanChannel();
-
   if (wasRx)
   {
     state = startReceive();
@@ -575,7 +563,7 @@ int16_t SX126x::startReceive(uint32_t timeout) {
   }
 
   // set buffer pointers
-  state = setBufferBaseAddress();
+  //state = setBufferBaseAddress();
   if(state != ERR_NONE) {
     return(state);
   }
