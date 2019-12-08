@@ -30,6 +30,7 @@ int16_t SX126x::begin_i(uint16_t bwkHz_x10, uint8_t sf, uint8_t cr, uint16_t syn
   _ldro = 0x00;
   _crcType = SX126X_LORA_CRC_ON;
   _preambleLength = preambleLength;
+  _tcxoDelay = 0;
 
   // set mode to standby
   int16_t state = standby();
@@ -548,6 +549,87 @@ int16_t SX126x::startTransmit(uint8_t* data, size_t len, uint8_t addr) {
 }
 
 int16_t SX126x::startReceive(uint32_t timeout) {
+  int16_t state = startReceiveCommon();
+  if(state != ERR_NONE) {
+    return(state);
+  }
+
+  // set mode to receive
+  state = setRx(timeout);
+
+  return(state);
+}
+
+int16_t SX126x::startReceiveDutyCycle(uint32_t rxPeriod, uint32_t sleepPeriod) {
+  // datasheet claims time to go to sleep is ~500us, same to wake up, compensate for that with 1 ms + TCXO delay
+  uint32_t transitionTime = _tcxoDelay + 1000;
+  sleepPeriod -= transitionTime;
+
+  // divide by 15.625
+  uint32_t rxPeriodRaw = (rxPeriod * 8) / 125;
+  uint32_t sleepPeriodRaw = (sleepPeriod * 8) / 125;
+
+  // check 24 bit limit and zero value (likely not intended)
+  if((rxPeriodRaw & 0xFF000000) || (rxPeriodRaw == 0)) {
+    return(ERR_INVALID_RX_PERIOD);
+  }
+
+  // this check of the high byte also catches underflow when we subtracted transitionTime
+  if((sleepPeriodRaw & 0xFF000000) || (sleepPeriodRaw == 0)) {
+    return(ERR_INVALID_SLEEP_PERIOD);
+  }
+
+  int16_t state = startReceiveCommon();
+  if(state != ERR_NONE) {
+    return(state);
+  }
+
+  uint8_t data[6] = {(uint8_t)((rxPeriodRaw >> 16) & 0xFF), (uint8_t)((rxPeriodRaw >> 8) & 0xFF), (uint8_t)(rxPeriodRaw & 0xFF),
+                     (uint8_t)((sleepPeriodRaw >> 16) & 0xFF), (uint8_t)((sleepPeriodRaw >> 8) & 0xFF), (uint8_t)(sleepPeriodRaw & 0xFF)};
+  return(SPIwriteCommand(SX126X_CMD_SET_RX_DUTY_CYCLE, data, 6));
+}
+
+int16_t SX126x::startReceiveDutyCycleAuto(uint16_t senderPreambleLength, uint16_t minSymbols) {
+  if(senderPreambleLength == 0) {
+    senderPreambleLength = _preambleLength;
+  }
+
+  // worst case is that the sender starts transmiting when we're just less than minSymbols from going back to sleep.
+  // in this case, we don't catch minSymbols before going to sleep,
+  // so we must be awake for at least that long before the sender stops transmitting.
+  uint16_t sleepSymbols = senderPreambleLength - 2 * minSymbols;
+
+  // if we're not to sleep at all, just use the standard startReceive.
+  if(2 * minSymbols > senderPreambleLength) {
+    return(startReceive());
+  }
+
+  uint32_t symbolLength = ((uint32_t)(10 * 1000) << _sf) / (10 * _bwKhz);
+  uint32_t sleepPeriod = symbolLength * sleepSymbols;
+  RADIOLIB_DEBUG_PRINT(F("Auto sleep period: "));
+  RADIOLIB_DEBUG_PRINTLN(sleepPeriod);
+
+  // when the unit detects a preamble, it starts a timer that will timeout if it doesn't receive a header in time.
+  // the duration is sleepPeriod + 2 * wakePeriod.
+  // The sleepPeriod doesn't take into account shutdown and startup time for the unit (~1ms)
+  // We need to ensure that the timout is longer than senderPreambleLength.
+  // So we must satisfy: wakePeriod > (preamblePeriod - (sleepPeriod - 1000)) / 2. (A)
+  // we also need to ensure the unit is awake to see at least minSymbols. (B)
+  uint32_t wakePeriod = max(
+    (symbolLength * (senderPreambleLength + 1) - (sleepPeriod - 1000)) / 2, // (A)
+    symbolLength * (minSymbols + 1)); //(B)
+  RADIOLIB_DEBUG_PRINT(F("Auto wake period: "));
+  RADIOLIB_DEBUG_PRINTLN(wakePeriod);
+
+  //If our sleep period is shorter than our transition time, just use the standard startReceive
+  if(sleepPeriod < _tcxoDelay + 1016) {
+    return(startReceive());
+  }
+
+  return(startReceiveDutyCycle(wakePeriod, sleepPeriod));
+}
+
+int16_t SX126x::startReceiveCommon() {
   // set DIO mapping
   uint16_t irqMask = SX126X_IRQ_RX_DONE | SX126X_IRQ_TIMEOUT | SX126X_IRQ_CRC_ERR | SX126X_IRQ_HEADER_ERR,
            dio1Mask = SX126X_IRQ_RX_DONE ;
@@ -584,9 +666,6 @@ int16_t SX126x::startReceive(uint32_t timeout) {
     attachInterrupt(digitalPinToInterrupt(_mod->getInt0()), rxInterruptActionStatic, RISING);
     interrupts();
   }
-
-  // set mode to receive
-  state = setRx(timeout);
 
   return(state);
 }
@@ -1326,38 +1405,36 @@ int16_t SX126x::variablePacketLengthMode(uint8_t maxLen) {
 
 
 uint32_t SX126x::getTimeOnAir(size_t len) {
+  // everything is in microseconds to allow integer arithmetic
+  // some constants have .25, these are multiplied by 4, and have _x4 postfix to indicate that fact
   if(getPacketType() == SX126X_PACKET_TYPE_LORA) {
-    // Everything is working in microseconds to allow integer arithmetic
-    // Some constants are multiplied by 4, these have _x4 to indicate that fact.
     uint32_t symbolLength_us = ((10 * usPerSecond / kilo) << _sf) / _bwkHz_x10 ;
     uint8_t sfCoeff1_x4 = 17; // (4.25 * 4)
     uint8_t sfCoeff2 = 8;
     if(_sf == 5 || _sf == 6) {
-      sfCoeff1_x4 = 25; //6.25 * 4
+      sfCoeff1_x4 = 25; // 6.25 * 4
       sfCoeff2 = 0;
     }
     uint8_t sfDivisor = 4*_sf;
     if(symbolLength_us >= 16000) {
       sfDivisor = 4*(_sf - 2);
     }
-    const uint8_t bitsPerCrc = 16;
-    const uint8_t N_symbol_header = 20;
+    const int8_t bitsPerCrc = 16;
+    const int8_t N_symbol_header = 20;
 
-    // numerator of equation in section 6.1.4 of datasheet (might not actually be bitcount, but it has len * 8.)
+    // numerator of equation in section 6.1.4 of SX1268 datasheet v1.1 (might not actually be bitcount, but it has len * 8)
     int16_t bitCount = (int16_t) 8 * len + _crcType * bitsPerCrc - 4 * _sf  + sfCoeff2 + N_symbol_header;
-    // in the datasheet, this is done as max(bitCount, 0)
-    if (bitCount < 0)
+    if(bitCount < 0) {
       bitCount = 0;
-    // add (sfDivisor) - 1 to the numerator to give integer CEIL(...).
-    uint16_t nPreCodedSymbols = (bitCount + (sfDivisor - 1)) / (sfDivisor); 
-    // preamble can be 65k. Therefore nSymbol_x4 needs to be 32 bit.
+    }
+    // add (sfDivisor) - 1 to the numerator to give integer CEIL(...)
+    uint16_t nPreCodedSymbols = (bitCount + (sfDivisor - 1)) / (sfDivisor);
+
+    // preamble can be 65k, therefore nSymbol_x4 needs to be 32 bit
     uint32_t nSymbol_x4 = (_preambleLength + 8) * 4 + sfCoeff1_x4 + nPreCodedSymbols * (_cr + 4) * 4;
 
     return((symbolLength_us * nSymbol_x4) / 4);
   } else {
-    //float brBps = (SX126X_CRYSTAL_FREQ * MHz * 32) / (float)_br;
-    //return((uint32_t)(((len * 8.0) / brBps) * microPer));
-    // equivalent:
     return((len * 8 * _br) / (SX126X_CRYSTAL_FREQ * 32));
   }
 }
@@ -1426,6 +1503,8 @@ int16_t SX126x::setTCXO_i(uint8_t voltage_x10, uint32_t delay_us)
   data[1] = (uint8_t)((delayValue >> 16) & 0xFF);
   data[2] = (uint8_t)((delayValue >> 8) & 0xFF);
   data[3] = (uint8_t)(delayValue & 0xFF);
+
+  _tcxoDelay = delay;
 
   // enable TCXO control on DIO3
   return(SPIwriteCommand(SX126X_CMD_SET_DIO3_AS_TCXO_CTRL, data, 4));
