@@ -586,7 +586,12 @@ int16_t SX126x::startReceiveDutyCycle(uint32_t rxPeriod, uint32_t sleepPeriod) {
 
   uint8_t data[6] = {(uint8_t)((rxPeriodRaw >> 16) & 0xFF), (uint8_t)((rxPeriodRaw >> 8) & 0xFF), (uint8_t)(rxPeriodRaw & 0xFF),
                      (uint8_t)((sleepPeriodRaw >> 16) & 0xFF), (uint8_t)((sleepPeriodRaw >> 8) & 0xFF), (uint8_t)(sleepPeriodRaw & 0xFF)};
-  return(SPIwriteCommand(SX126X_CMD_SET_RX_DUTY_CYCLE, data, 6));
+  state = SPIwriteCommand(SX126X_CMD_SET_RX_DUTY_CYCLE, data, 6);
+
+  if (state == ERR_NONE) {
+    _curStatus = SX126X_STATUS_MODE_RX;
+  }
+  return(state);
 }
 
 int16_t SX126x::startReceiveDutyCycleAuto(uint16_t senderPreambleLength, uint16_t minSymbols) {
@@ -604,7 +609,7 @@ int16_t SX126x::startReceiveDutyCycleAuto(uint16_t senderPreambleLength, uint16_
     return(startReceive());
   }
 
-  uint32_t symbolLength = ((uint32_t)(10 * 1000) << _sf) / (10 * _bwKhz);
+  uint32_t symbolLength = ((uint32_t)(10 * 1000) << _sf) / (_bwkHz_x10);
   uint32_t sleepPeriod = symbolLength * sleepSymbols;
   RADIOLIB_DEBUG_PRINT(F("Auto sleep period: "));
   RADIOLIB_DEBUG_PRINTLN(sleepPeriod);
@@ -691,7 +696,9 @@ void SX126x::txInterruptActionStatic() {
 void SX126x::rxInterruptAction() {
   // freeze micros at entry.
   uint32_t entryMicros = micros();
-  
+#ifdef RADIOLIB_DEBUG
+  _entryMicros = entryMicros;
+#endif
 
   if (_curStatus != SX126X_STATUS_MODE_RX)
     return;
@@ -722,6 +729,10 @@ void SX126x::rxInterruptAction() {
     int16_t _isrState;
 #endif
     _isrState = getIrqStatus(&irqStatus);
+#ifdef RADIOLIB_DEBUG
+    if (irqStatus != 0)
+      _isrIrqStatus = irqStatus;
+#endif
     if (_isrState != ERR_NONE) {
       return;
     }
@@ -1504,7 +1515,7 @@ int16_t SX126x::setTCXO_i(uint8_t voltage_x10, uint32_t delay_us)
   data[2] = (uint8_t)((delayValue >> 8) & 0xFF);
   data[3] = (uint8_t)(delayValue & 0xFF);
 
-  _tcxoDelay = delay;
+  _tcxoDelay = delay_us;
 
   // enable TCXO control on DIO3
   return(SPIwriteCommand(SX126X_CMD_SET_DIO3_AS_TCXO_CTRL, data, 4));

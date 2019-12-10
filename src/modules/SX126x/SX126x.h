@@ -928,6 +928,8 @@ class SX126x {
     // debugging variables for ISR functions.
     bool _bailed = false;
     int16_t _isrState = ERR_NONE;
+    uint32_t _entryMicros = 0;
+    uint16_t _isrIrqStatus = 0;
 #endif
 
 
