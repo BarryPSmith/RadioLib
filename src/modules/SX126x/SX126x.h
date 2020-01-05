@@ -381,7 +381,7 @@ class SX126x {
       \returns \ref status_codes
     */
     int16_t begin(float bw, uint8_t sf, uint8_t cr, uint16_t syncWord, float currentLimit, uint16_t preambleLength, float tcxoVoltage);
-
+    
     /*!
       \brief Initialization method for FSK modem.
 
@@ -402,6 +402,13 @@ class SX126x {
       \returns \ref status_codes
     */
     int16_t beginFSK(float br, float freqDev, float rxBw, float currentLimit, uint16_t preambleLength, float dataShaping, float tcxoVoltage);
+
+    /*
+      \brief Processes 'interrupt' logic without having to use interrupts
+
+      It's just easier to maintain a single thread for some things...
+    */
+    int16_t processLoop();
 
     /*!
       \brief Blocking binary transmit method.
@@ -491,13 +498,14 @@ class SX126x {
 
     // interrupt methods
 
+#if 0
     /*!
       \brief Sets interrupt service routine to call when DIO1 activates.
 
       \param func ISR to call.
     */
     void setDio1Action(void (*func)(void));
-
+#endif
     /*!
       \brief Sets interrupt service routine to call when DIO1 activates.
 
@@ -809,10 +817,6 @@ class SX126x {
    */
    uint32_t getTimeOnAir(size_t len);
 
-   /*!
-    \brief This must be called to allow isChannelBusy to detect channel activity without interrupting receive.
-   */
-   void enableIsChannelBusy();
 #ifndef RADIOLIB_GODMODE
   protected:
 #endif
@@ -901,9 +905,9 @@ class SX126x {
     uint16_t _preambleLengthFSK;
     uint16_t _rxBwKhz_x10;
 
+    static constexpr uint32_t maxBusyTimeout = 60000000; // 1 minute failsafe.
     volatile uint32_t _lastPreambleDetMicros = 0, _longestPacketMicros = 0, _avgPacketMicros = 1E6;
     volatile bool _maybeReceiving = false;
-    bool _enableIsChannelBusy = false;
 
     uint16_t _dataRate;
 
@@ -913,25 +917,14 @@ class SX126x {
 
     int16_t config(uint8_t modem);
     
-    // these statics could be duplicated to allow multiple instances of SX126x to listen simultaneously
-    static SX126x* pCurrentReceiver;
-    static SX126x* pCurrentTransmitter;
-    static void txInterruptActionStatic();
-    static void rxInterruptActionStatic();
-    void rxInterruptAction();
+    // these statics could be duplicated to allow multiple instances of SX126x to listen simultaneouslystatic bool _interruptFlag;
+    volatile static bool _interruptFlag;
+    static void interruptActionStatic();
+    int16_t rxInterruptAction();
     void rxInterruptAction(uint16_t irqStatus, uint32_t entryMicros);
 
     void (*_rxDoneFunc)(void)  = NULL;
     void (*_txDoneFunc)(void) = NULL;
-
-#ifdef RADIOLIB_DEBUG
-    // debugging variables for ISR functions.
-    bool _bailed = false;
-    int16_t _isrState = ERR_NONE;
-    uint32_t _entryMicros = 0;
-    uint16_t _isrIrqStatus = 0;
-#endif
-
 
     // common low-level SPI interface
     int16_t SPIwriteCommand(uint8_t cmd, uint8_t* data, uint8_t numBytes, bool waitForBusy = true);

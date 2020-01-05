@@ -1,7 +1,6 @@
 #include "SX126x.h"
 
-SX126x* SX126x::pCurrentReceiver;
-SX126x* SX126x::pCurrentTransmitter;
+volatile bool SX126x::_interruptFlag = false;
 
 #if 0
 SX126x::SX126x(Module* mod) : PhysicalLayer(SX126X_CRYSTAL_FREQ, SX126X_DIV_EXPONENT, SX126X_MAX_PACKET_LENGTH) {
@@ -19,6 +18,8 @@ int16_t SX126x::begin_i(uint16_t bwkHz_x10, uint8_t sf, uint8_t cr, uint16_t syn
   uint8_t currentLimit_mA_div2_5, uint16_t preambleLength, uint8_t tcxoVoltage_x10) {
   // set module properties
   _mod->init(RADIOLIB_USE_SPI, RADIOLIB_INT_BOTH);
+
+  attachInterrupt(digitalPinToInterrupt(_mod->getInt0()), interruptActionStatic, RISING);
 
   // BW in kHz and SF are required in order to calculate LDRO for setModulationParams
   _bwkHz_x10 = bwkHz_x10;
@@ -175,6 +176,33 @@ int16_t SX126x::beginFSK_i(uint32_t br_bps, uint32_t freqDev_Hz, uint16_t rxBw_k
   state = setDio2AsRfSwitch(false);
 
   return(state);
+}
+
+int16_t SX126x::processLoop()
+{
+  // check if an interrupt has occurred
+  auto sreg = SREG;
+  cli();
+  bool localFlag = _interruptFlag;
+  _interruptFlag = false;
+  SREG = sreg;
+  if (!localFlag) {
+    return(ERR_NONE);
+  }
+  
+  switch (_curStatus)
+  {
+  case SX126X_STATUS_MODE_TX:
+    //Handle the interrupt in TX mode
+    if (_txDoneFunc)
+      _txDoneFunc();
+    break;
+  case SX126X_STATUS_MODE_RX:
+    //Handle the interrupt in RX mode
+    return(rxInterruptAction());
+  }
+  
+  return ERR_NONE;
 }
 
 int16_t SX126x::transmit(uint8_t* data, size_t len, uint8_t addr) {
@@ -335,10 +363,6 @@ int16_t SX126x::scanChannel() {
     return(state);
   }
   
-  // set DIO pin mapping
-  if (_enableIsChannelBusy) {
-    detachInterrupt(digitalPinToInterrupt(_mod->getInt0()));
-  }
   state = setDioIrqParams(SX126X_IRQ_CAD_DETECTED | SX126X_IRQ_CAD_DONE, SX126X_IRQ_CAD_DETECTED | SX126X_IRQ_CAD_DONE);
   if(state != ERR_NONE) {
     return(state);
@@ -356,8 +380,16 @@ int16_t SX126x::scanChannel() {
     return(state);
   }
 
+  
+  uint32_t symbolLength = ((uint32_t)(10 * 1000) << _sf) / (_bwkHz_x10);
+  uint32_t timeout = 18 * symbolLength;
+  uint32_t start = micros();
   // wait for channel activity detected or timeout
-  while(!digitalRead(_mod->getInt0()));
+  while(!digitalRead(_mod->getInt0())) {
+    if (micros() - start > timeout) {
+      return(ERR_RX_TIMEOUT);
+    }
+  }
 
   // check CAD result
   uint16_t cadResult;
@@ -396,6 +428,9 @@ int16_t SX126x::isChannelBusy(bool scanIfInRx) {
       // and at least 3 times the average packet length.
       // We might want to tweak this algorithm (what exists in literature?)
       uint32_t preambleDetectTimeout = (2 * _avgPacketMicros + _longestPacketMicros);
+      if (preambleDetectTimeout > maxBusyTimeout) {
+        preambleDetectTimeout = maxBusyTimeout;
+      }
       uint32_t curMicros = micros();
       RADIOLIB_DEBUG_PRINT(F("dm: "));
       RADIOLIB_DEBUG_PRINT(curMicros - _lastPreambleDetMicros);
@@ -449,28 +484,18 @@ int16_t SX126x::standby(uint8_t mode) {
   return(state);
 }
 
+#if 0
 void SX126x::setDio1Action(void (*func)(void)) {
-  if (_enableIsChannelBusy) {
-    RADIOLIB_DEBUG_PRINTLN(F("!Cannot call setDio1Action if using isChannelBusy!"));
-    return;
-  }
   attachInterrupt(digitalPinToInterrupt(_mod->getInt0()), func, RISING);
 }
+#endif
 
 void SX126x::setTxDoneAction(void (*func)(void)) {
-  if (!this->_enableIsChannelBusy)
-    RADIOLIB_DEBUG_PRINTLN(F("!setTxDoneAction only works after enableIsChannelBusy!"));
-  noInterrupts();
   _txDoneFunc = func;
-  interrupts();
 }
 
 void SX126x::setRxDoneAction(void (*func)(void)) {
-  if (!this->_enableIsChannelBusy)
-    RADIOLIB_DEBUG_PRINTLN(F("!setRxDoneAction only works after enableIsChannelBusy!"));
-  noInterrupts();
   _rxDoneFunc = func;
-  interrupts();
 }
 
 int16_t SX126x::startTransmit(uint8_t* data, size_t len, uint8_t addr) {
@@ -503,10 +528,6 @@ int16_t SX126x::startTransmit(uint8_t* data, size_t len, uint8_t addr) {
 
   //Ensure our Rx action isn't active - it clears the IRQ flags as it goes.
   // set DIO mapping
-  noInterrupts();
-  pCurrentTransmitter = this;
-  attachInterrupt(digitalPinToInterrupt(_mod->getInt0()), txInterruptActionStatic, RISING);
-  interrupts();
   state = setDioIrqParams(SX126X_IRQ_TX_DONE | SX126X_IRQ_TIMEOUT, SX126X_IRQ_TX_DONE);
   if(state != ERR_NONE) {
     return(state);
@@ -639,10 +660,10 @@ int16_t SX126x::startReceiveCommon() {
   uint16_t irqMask = SX126X_IRQ_RX_DONE | SX126X_IRQ_TIMEOUT | SX126X_IRQ_CRC_ERR | SX126X_IRQ_HEADER_ERR,
            dio1Mask = SX126X_IRQ_RX_DONE ;
 
-  if (_enableIsChannelBusy) {
+  //if (_enableIsChannelBusy) {
     irqMask |= SX126X_IRQ_PREAMBLE_DETECTED;
     dio1Mask |= SX126X_IRQ_PREAMBLE_DETECTED;
-  }
+  //}
 
   int16_t state = setDioIrqParams(irqMask, dio1Mask);
   if(state != ERR_NONE) {
@@ -661,47 +682,22 @@ int16_t SX126x::startReceiveCommon() {
     return(state);
   }
 
-  if (_enableIsChannelBusy)
-  {
-    // _maybeReceiving might have been left over from last time we were in startReceive
-    _maybeReceiving = false;
-    // addresses are two bytes, need to disable interrupts while changing them
-    noInterrupts();
-    pCurrentReceiver = this;
-    attachInterrupt(digitalPinToInterrupt(_mod->getInt0()), rxInterruptActionStatic, RISING);
-    interrupts();
-  }
+  // _maybeReceiving might have been left over from last time we were in startReceive
+  _maybeReceiving = false;
 
   return(state);
 }
 
-void SX126x::rxInterruptActionStatic() {
-  if (pCurrentReceiver != 0) {
-    pCurrentReceiver->_bailIfBusy = true;
-    SX126x::pCurrentReceiver->rxInterruptAction();
-    pCurrentReceiver->_bailIfBusy = false;
-  }
+void SX126x::interruptActionStatic() {
+  _interruptFlag = true;
 }
 
-void SX126x::txInterruptActionStatic() {
-  if ((SX126x::pCurrentTransmitter != 0) &&
-      (SX126x::pCurrentTransmitter->_txDoneFunc != 0) &&
-      (SX126x::pCurrentTransmitter->_curStatus == SX126X_STATUS_MODE_TX)) {
-    pCurrentTransmitter->_bailIfBusy = true;
-    SX126x::pCurrentTransmitter->_txDoneFunc();
-    pCurrentTransmitter->_bailIfBusy = false;
-  }
-}
-
-void SX126x::rxInterruptAction() {
+int16_t SX126x::rxInterruptAction() {
   // freeze micros at entry.
   uint32_t entryMicros = micros();
-#ifdef RADIOLIB_DEBUG
-  _entryMicros = entryMicros;
-#endif
 
   if (_curStatus != SX126X_STATUS_MODE_RX)
-    return;
+    return(ERR_UNKNOWN);
 
   uint8_t count = 0;
   /* I wish there was an atomic get & clear IRQ status in one go,
@@ -711,40 +707,32 @@ void SX126x::rxInterruptAction() {
      We're guaranteed to run until the IRQ register is empty.
      If DIO1 goes low and high again and the SX126x triggers additional interrupts on the MCU while we're in this function, 
      we'll run again but the register will be empty so no harm 
-     (other than the fact we can end up in a blocking ISR for a long time)
     */
   
   uint16_t irqStatus;
   do {
-    if (count++ > 3)
-    {
-#ifdef RADIOLIB_DEBUG
-      _bailed = true;
-#endif
-      return;
+    if (count++ > 3) {
+      RADIOLIB_DEBUG_PRINTLN(F("Bailed from rxInterruptAction"));
+      return(ERR_UNKNOWN);
     }
         
-#ifndef RADIOLIB_DEBUG
-    // this is a class variable in debug mode.
-    int16_t _isrState;
-#endif
-    _isrState = getIrqStatus(&irqStatus);
-#ifdef RADIOLIB_DEBUG
-    if (irqStatus != 0)
-      _isrIrqStatus = irqStatus;
-#endif
-    if (_isrState != ERR_NONE) {
-      return;
+
+    int16_t state = getIrqStatus(&irqStatus);
+    if (state != ERR_NONE) {
+      return(state);
     }
     irqStatus = irqStatus & (SX126X_IRQ_PREAMBLE_DETECTED | SX126X_IRQ_RX_DONE);
 
-    _isrState = clearIrqStatus(irqStatus);
-    if (_isrState != ERR_NONE) {
-      return;
+    state = clearIrqStatus(irqStatus);
+    if (state != ERR_NONE) {
+      return(state);
     }
-    if (irqStatus)
+    if (irqStatus) {
       rxInterruptAction(irqStatus, entryMicros);
+    }
   } while (irqStatus);
+
+  return (ERR_NONE);
 }
 
 
@@ -1450,11 +1438,6 @@ uint32_t SX126x::getTimeOnAir(size_t len) {
   }
 }
 
-void SX126x::enableIsChannelBusy()
-{
-  _enableIsChannelBusy = true;
-}
-
 int16_t SX126x::setTCXO(float voltage, uint32_t delay) {
   //Ensure we don't overflow converting to integer:
   if (!(0 < voltage && voltage < 4)) {
@@ -2056,6 +2039,7 @@ int16_t SX126x::SPItransfer(uint8_t* cmd, uint8_t cmdLen, bool write, uint8_t* d
     } else {
       RADIOLIB_VERBOSE_PRINT("R\t");
       // skip the first byte for read-type commands (status-only)
+      if (!rdSkipFirstByte)
       RADIOLIB_VERBOSE_PRINT(SX126X_CMD_NOP, HEX);
       RADIOLIB_VERBOSE_PRINT('\t');
       RADIOLIB_VERBOSE_PRINT(debugBuff[0], HEX);
