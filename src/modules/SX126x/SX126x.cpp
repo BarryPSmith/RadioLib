@@ -180,6 +180,15 @@ int16_t SX126x::beginFSK_i(uint32_t br_bps, uint32_t freqDev_Hz, uint16_t rxBw_k
 
 int16_t SX126x::processLoop()
 {
+#ifdef  NO_DIO1_INTERRUPT
+  static bool lastSignalled = false;
+  bool curVal = digitalRead(_mod->getInt0());
+  if (curVal && !lastSignalled)
+    _interruptFlag = true;
+  lastSignalled = curVal;
+#endif //  NO_DIO1_INTERRUPT
+
+
   // check if an interrupt has occurred
   auto sreg = SREG;
   cli();
@@ -1687,9 +1696,9 @@ int16_t SX126x::setModulationParams(uint8_t sf, uint8_t bw, uint8_t cr, uint8_t 
   // calculate symbol length and enable low data rate optimization, if needed
   if(ldro == 0xFF) {
     uint32_t symbolLength_us = ((10 * usPerSecond / kilo) << _sf) / _bwkHz_x10;
-    RADIOLIB_DEBUG_PRINT("Symbol length: ");
+    RADIOLIB_DEBUG_PRINT(F("Symbol length: "));
     RADIOLIB_DEBUG_PRINT(symbolLength_us);
-    RADIOLIB_DEBUG_PRINTLN(" \xe6s"); //microseconds
+    RADIOLIB_DEBUG_PRINTLN(F(" \xe6s")); //microseconds
     if(symbolLength_us >= 16000) {
       _ldro = SX126X_LORA_LOW_DATA_RATE_OPTIMIZE_ON;
     } else {
@@ -2018,7 +2027,7 @@ int16_t SX126x::SPItransfer(uint8_t* cmd, uint8_t cmdLen, bool write, uint8_t* d
   // print debug output
   #ifdef RADIOLIB_VERBOSE
     // print command byte(s)
-    RADIOLIB_VERBOSE_PRINT("CMD\t");
+    RADIOLIB_VERBOSE_PRINT(F("CMD\t"));
     for(uint8_t n = 0; n < cmdLen; n++) {
       RADIOLIB_VERBOSE_PRINT(cmd[n], HEX);
       RADIOLIB_VERBOSE_PRINT('\t');
@@ -2026,9 +2035,9 @@ int16_t SX126x::SPItransfer(uint8_t* cmd, uint8_t cmdLen, bool write, uint8_t* d
     RADIOLIB_VERBOSE_PRINTLN();
 
     // print data bytes
-    RADIOLIB_VERBOSE_PRINT("DAT");
+    RADIOLIB_VERBOSE_PRINT(F("DAT"));
     if(write) {
-      RADIOLIB_VERBOSE_PRINT("W\t");
+      RADIOLIB_VERBOSE_PRINT(F("W\t"));
       for(uint8_t n = 0; n < numBytes; n++) {
         RADIOLIB_VERBOSE_PRINT(dataOut[n], HEX);
         RADIOLIB_VERBOSE_PRINT('\t');
@@ -2037,7 +2046,7 @@ int16_t SX126x::SPItransfer(uint8_t* cmd, uint8_t cmdLen, bool write, uint8_t* d
       }
       RADIOLIB_VERBOSE_PRINTLN();
     } else {
-      RADIOLIB_VERBOSE_PRINT("R\t");
+      RADIOLIB_VERBOSE_PRINT(F("R\t"));
       // skip the first byte for read-type commands (status-only)
       if (!rdSkipFirstByte)
       RADIOLIB_VERBOSE_PRINT(SX126X_CMD_NOP, HEX);
