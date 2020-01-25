@@ -205,6 +205,7 @@ int16_t SX126x::processLoop()
     //Handle the interrupt in TX mode
     if (_txDoneFunc)
       _txDoneFunc();
+    _curStatus = SX126X_STATUS_MODE_STDBY_RC;
     break;
   case SX126X_STATUS_MODE_RX:
     //Handle the interrupt in RX mode
@@ -254,8 +255,8 @@ int16_t SX126x::transmit(uint8_t* data, size_t len, uint8_t addr) {
 
   // wait for packet transmission or timeout
   uint32_t start = micros();
-  int16_t val;
-  while(!(val = digitalRead(_mod->getInt0()))) {
+  while(!(digitalRead(_mod->getInt0()))) {
+    yield();
     if(micros() - start > timeout) {
       clearIrqStatus();
       return(ERR_TX_TIMEOUT);
