@@ -34,7 +34,7 @@ int16_t SX126x::begin_i(uint16_t bwkHz_x10, uint8_t sf, uint8_t cr, uint16_t syn
   _tcxoDelay = 0;
 
   // set mode to standby
-  int16_t state = standby();
+  int16_t state = standby(SX126X_STANDBY_RC);
   if(state != ERR_NONE) {
     return(state);
   }
@@ -111,7 +111,7 @@ int16_t SX126x::beginFSK_i(uint32_t br_bps, uint32_t freqDev_Hz, uint16_t rxBw_k
   _addrComp = SX126X_GFSK_ADDRESS_FILT_OFF;
 
   // set mode to standby
-  int16_t state = standby();
+  int16_t state = standby(SX126X_STANDBY_RC);
   if(state != ERR_NONE) {
     return(state);
   }
@@ -398,6 +398,7 @@ int16_t SX126x::scanChannel() {
   while(!digitalRead(_mod->getInt0())) {
     if (micros() - start > timeout) {
       return(ERR_RX_TIMEOUT);
+    yield();
     }
   }
 
@@ -420,13 +421,13 @@ int16_t SX126x::scanChannel() {
   return(ERR_UNKNOWN);
 }
 
-int16_t SX126x::isChannelBusy(bool scanIfInRx) {
-  uint8_t status;
-  int16_t state = getStatus(&status);
-  if(state != ERR_NONE) {
+int16_t SX126x::isChannelBusy(bool scanIfInRx, bool reenterAfterScan) {
+  //uint8_t status;
+  int16_t state;// = getStatus(&status);
+  /*if(state != ERR_NONE) {
     return(state);
-  }
-  bool wasRx = ((status & SX126X_STATUS_MODE_MASK) == SX126X_STATUS_MODE_RX);
+  }*/
+  bool wasRx = _curStatus == SX126X_STATUS_MODE_RX; // ((status & SX126X_STATUS_MODE_MASK) == SX126X_STATUS_MODE_RX);
   if(wasRx) {
     RADIOLIB_DEBUG_PRINTLN(F("isChannelBusy queried in receive."));
     RADIOLIB_DEBUG_PRINT(F("maybe receiving: "));
@@ -458,7 +459,8 @@ int16_t SX126x::isChannelBusy(bool scanIfInRx) {
   }
 
   int16_t ret = scanChannel();
-  if (wasRx)
+  if (wasRx &&
+    (reenterAfterScan || ret != CHANNEL_FREE))
   {
     state = startReceive();
     if (state != ERR_NONE) {
@@ -482,7 +484,7 @@ int16_t SX126x::sleep() {
 }
 
 int16_t SX126x::standby() {
-   return(SX126x::standby(SX126X_STANDBY_RC));
+   return(SX126x::standby(SX126X_STANDBY_XOSC));
 }
 
 int16_t SX126x::standby(uint8_t mode) {
@@ -1459,7 +1461,7 @@ int16_t SX126x::setTCXO(float voltage, uint32_t delay) {
 int16_t SX126x::setTCXO_i(uint8_t voltage_x10, uint32_t delay_us)
 {
   // set mode to standby
-  standby();
+  standby(SX126X_STANDBY_RC);
 
   // check SX126X_XOSC_START_ERR flag and clear it
   if(getDeviceErrors() & SX126X_XOSC_START_ERR) {
@@ -1828,6 +1830,7 @@ int16_t SX126x::fixImplicitTimeout() {
 }
 
 int16_t SX126x::fixInvertedIQ(uint8_t iqConfig) {
+  return ERR_NONE;
   // fixes IQ configuration for inverted IQ
   // see SX1262/SX1268 datasheet, chapter 15 Known Limitations, section 15.4 for details
 
@@ -1871,8 +1874,8 @@ int16_t SX126x::config(uint8_t modem) {
     return(state);
   }
 
-  // set Rx/Tx fallback mode to STDBY_RC
-  data[0] = SX126X_RX_TX_FALLBACK_MODE_STDBY_RC;
+  // set Rx/Tx fallback mode to FS. This allows quicker switching between modes with a TCXO.
+  data[0] = SX126X_RX_TX_FALLBACK_MODE_FS;
   state = SPIwriteCommand(SX126X_CMD_SET_RX_TX_FALLBACK_MODE, data, 1);
   if(state != ERR_NONE) {
     return(state);

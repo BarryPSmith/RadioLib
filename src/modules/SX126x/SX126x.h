@@ -471,7 +471,7 @@ class SX126x {
 
       \returns \ref status_codes
     */
-    int16_t isChannelBusy(bool scanIfInRx = true);
+    int16_t isChannelBusy(bool scanIfInRx = true, bool reenterAfterScan = true);
 
     /*!
       \brief Sets the module to sleep mode.
