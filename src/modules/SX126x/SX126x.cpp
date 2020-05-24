@@ -233,7 +233,8 @@ int16_t SX126x::transmit(uint8_t* data, size_t len, uint8_t addr) {
   uint8_t modem = getPacketType();
   if(modem == SX126X_PACKET_TYPE_LORA) {
     // calculate timeout (150% of expected time-on-air)
-    timeout = (getTimeOnAir(len) * 3) / 2;
+    // Buggerit. getTimeOnAir is an expensive function. Just use 1 second...
+    timeout = 1000000; // (getTimeOnAir(len) * 3) / 2;
 
   } else if(modem == SX126X_PACKET_TYPE_GFSK) {
     // calculate timeout (500% of expected time-on-air)
@@ -471,7 +472,7 @@ int16_t SX126x::isChannelBusy(bool scanIfInRx, bool reenterAfterScan) {
 }
 
 int16_t SX126x::sleep() {
-  uint8_t data[] = {SX126X_SLEEP_START_COLD | SX126X_SLEEP_RTC_OFF};
+  uint8_t data[] = {SX126X_SLEEP_START_WARM | SX126X_SLEEP_RTC_OFF};
   int16_t state = SPIwriteCommand(SX126X_CMD_SET_SLEEP, data, 1, false);
   if (state == ERR_NONE) {
     _curStatus = 0;
@@ -598,18 +599,17 @@ int16_t SX126x::startReceiveDutyCycle(uint32_t rxPeriod, uint32_t sleepPeriod) {
   uint32_t transitionTime = _tcxoDelay + 1000;
   sleepPeriod -= transitionTime;
 
-  // divide by 15.625
-  uint32_t rxPeriodRaw = (rxPeriod * 8) / 125;
   uint32_t sleepPeriodRaw = (sleepPeriod * 8) / 125;
-
-  // check 24 bit limit and zero value (likely not intended)
-  if((rxPeriodRaw & 0xFF000000) || (rxPeriodRaw == 0)) {
-    return(ERR_INVALID_RX_PERIOD);
-  }
-
   // this check of the high byte also catches underflow when we subtracted transitionTime
   if((sleepPeriodRaw & 0xFF000000) || (sleepPeriodRaw == 0)) {
     return(ERR_INVALID_SLEEP_PERIOD);
+  }
+
+  // divide by 15.625
+  uint32_t rxPeriodRaw = (rxPeriod * 8) / 125;
+  // check 24 bit limit and zero value (likely not intended)
+  if((rxPeriodRaw & 0xFF000000) || (rxPeriodRaw == 0)) {
+    return(ERR_INVALID_RX_PERIOD);
   }
 
   int16_t state = startReceiveCommon();
@@ -1644,6 +1644,9 @@ int16_t SX126x::calibrateImage(uint8_t* data) {
 }
 
 uint8_t SX126x::getPacketType() {
+  //We only use LoRa 
+  return SX126X_PACKET_TYPE_LORA;
+
   uint8_t data = 0xFF;
   SPIreadCommand(SX126X_CMD_GET_PACKET_TYPE, &data, 1);
   return(data);
