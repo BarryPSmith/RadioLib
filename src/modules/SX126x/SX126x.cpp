@@ -1635,6 +1635,14 @@ int16_t SX126x::clearIrqStatus(uint16_t clearIrqParams) {
 }
 
 int16_t SX126x::setRfFrequency(uint32_t frf) {
+#ifdef MIN_FREQ //We put this guard in deep to make it harder for runaway code to bypass it.
+  uint32_t minFreqRf = getRfFreq(MIN_FREQ);
+  uint32_t maxFreqRf = getRfFreq(MAX_FREQ);
+  if (frf < minFreqRf || maxFreqRf < frf)
+    return (ERR_INVALID_FREQUENCY);
+#else
+#error No Frequency range defined
+#endif
   uint8_t data[4] = {(uint8_t)((frf >> 24) & 0xFF), (uint8_t)((frf >> 16) & 0xFF), (uint8_t)((frf >> 8) & 0xFF), (uint8_t)(frf & 0xFF)};
   return(SPIwriteCommand(SX126X_CMD_SET_RF_FREQUENCY, data, 4));
 }
@@ -1949,9 +1957,9 @@ int16_t SX126x::SPItransfer(uint8_t* cmd, uint8_t cmdLen, bool write, uint8_t* d
 
   // ensure BUSY is low (state meachine ready)
   RADIOLIB_VERBOSE_PRINTLN(F("Wait for BUSY ... "));
-  uint32_t start = millis();
+  uint16_t start = millis();
   while(digitalRead(_mod->getInt1())) {
-    if(_bailIfBusy || (millis() - start >= timeout)) {
+    if(_bailIfBusy || ((uint16_t)millis() - start >= timeout)) {
       return(ERR_SPI_CMD_TIMEOUT);
     }
   }
@@ -2024,7 +2032,7 @@ int16_t SX126x::SPItransfer(uint8_t* cmd, uint8_t cmdLen, bool write, uint8_t* d
     delayMicroseconds(1);
     start = millis();
     while(digitalRead(_mod->getInt1())) {
-        if(millis() - start >= timeout) {
+        if((uint16_t)millis() - start >= timeout) {
           status = SX126X_STATUS_CMD_TIMEOUT;
           break;
         }

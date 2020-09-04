@@ -871,7 +871,7 @@ class SX126x {
     int16_t setOptimalHiPowerPaConfig(int8_t* inOutPower);
     int16_t setPacketMode(uint8_t mode, uint8_t len);
 
-    inline uint32_t getRfFreq(const uint32_t freq_Hz) {
+    inline constexpr uint32_t getRfFreq(const uint32_t freq_Hz) {
       /* naiive implementation: frf = freq_Hz * (1 << 25) / (32 * 1000000) gives major overflow / underflow.
      * freq_Hz could be as large as 960M (a little less than 2^30).
      * We us the fact that 32MHz = 2^11 * 5^6 Hz.
@@ -911,7 +911,7 @@ class SX126x {
 
     uint16_t _dataRate;
 
-    bool _bailIfBusy = false;
+    const bool _bailIfBusy = false;
 
     uint32_t _tcxoDelay;
 
