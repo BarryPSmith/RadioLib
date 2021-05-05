@@ -889,6 +889,8 @@ class SX126x {
     int16_t fixImplicitTimeout();
     int16_t fixInvertedIQ(uint8_t iqConfig);
 
+    static void interruptActionStatic();
+
 #ifndef RADIOLIB_GODMODE
   private:
 #endif
@@ -900,10 +902,12 @@ class SX126x {
     uint16_t _preambleLength;
     uint16_t _bwkHz_x10; // note in many places we assume that this has no more than 1 significant digit after the decimal point
 
+#ifndef FSK
     uint32_t _br, _freqDev;
     uint8_t _rxBw, _pulseShape, _crcTypeFSK, _syncWordLength, _addrComp, _whitening, _packetType;
     uint16_t _preambleLengthFSK;
     uint16_t _rxBwKhz_x10;
+#endif
 
     static constexpr uint32_t maxBusyTimeout = 60000000; // 1 minute failsafe.
     volatile uint32_t _lastPreambleDetMicros = 0, _longestPacketMicros = 0, _avgPacketMicros = 1E6;
@@ -913,13 +917,18 @@ class SX126x {
 
     const bool _bailIfBusy = false;
 
-    uint32_t _tcxoDelay;
+#ifdef SX_TCXO_STARTUP_US
+    static inline constexpr uint32_t _tcxoDelay = SX_TCXO_STARTUP_US;
+#elif defined(SX_TCXOV_X10)
+    static inline constexpr uint32_t _tcxoDelay = 5000;
+#else
+    static inline constexpr uint32_t _tcxoDelay = 0;
+#endif
 
     int16_t config(uint8_t modem);
     
     // these statics could be duplicated to allow multiple instances of SX126x to listen simultaneouslystatic bool _interruptFlag;
     volatile static bool _interruptFlag;
-    static void interruptActionStatic();
     int16_t rxInterruptAction();
     void rxInterruptAction(uint16_t irqStatus, uint32_t entryMicros);
 
