@@ -20,11 +20,14 @@ int16_t SX126x::begin_i(uint16_t bwkHz_x10, uint8_t sf, uint8_t cr, uint16_t syn
   _mod->init(RADIOLIB_USE_SPI, RADIOLIB_INT_BOTH);
 
 #ifndef NO_DIO1_INTERRUPT
-#if SX_DIO1 != 3
-  attachInterrupt(digitalPinToInterrupt(_mod->getInt0()), interruptActionStatic, RISING);
-#else
+#if SX_DIO1 == 3
   EICRA |= _BV(ISC11) | _BV(ISC10);
   EIMSK |= _BV(INT1);
+#elif SX_DIO1 == 2
+  EICRA |= _BV(ISC01) | _BV(ISC01);
+  EIMSK |= _BV(INT0);
+#else
+  attachInterrupt(digitalPinToInterrupt(_mod->getInt0()), interruptActionStatic, RISING);
 #endif
 #endif
 
@@ -710,6 +713,11 @@ ISR(INT1_vect) {
   SX126x::interruptActionStatic();
 }
 #endif
+#if SX_DIO1 == 2
+ISR(INT0_vect) {
+  SX126x::interruptActionStatic();
+}
+#endif
 
 void SX126x::interruptActionStatic() {
   _interruptFlag = true;
@@ -1391,7 +1399,7 @@ float SX126x::getSNR() {
 
   // get last packet SNR from packet status
   uint32_t packetStatus = getPacketStatus();
-  uint8_t snrPkt = (packetStatus >> 8) & 0xFF;
+  int8_t snrPkt = (packetStatus >> 8) & 0xFF;
   return(snrPkt / 4.0);
 }
 
@@ -1426,6 +1434,17 @@ int16_t SX126x::fixedPacketLengthMode(uint8_t len) {
 
 int16_t SX126x::variablePacketLengthMode(uint8_t maxLen) {
   return(setPacketMode(SX126X_GFSK_PACKET_VARIABLE, maxLen));
+}
+
+int16_t SX126x::setRxGain(bool boosted)
+{
+  uint8_t val = boosted ? 0x96 : 0x94;
+  auto state = writeRegister(SX126X_REG_RX_GAIN, &val, 1);
+  if (state != ERR_NONE)
+    return state;
+  uint8_t vals[3] = { 0x01, 0x08, 0xAC };
+  state = writeRegister(SX126X_REG_RX_GAIN_RETENTION_0, vals, 3);
+  return state;
 }
 
 

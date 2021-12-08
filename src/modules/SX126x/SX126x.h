@@ -808,6 +808,15 @@ class SX126x {
    */
    int16_t variablePacketLengthMode(uint8_t maxLen = SX126X_MAX_PACKET_LENGTH);
 
+   /*!
+     \brief Change Rx Boosted gain, which gives increased sensitivity for extra current draw.
+
+     \param boosted Whether to turn boosted on or off
+
+     \returns \ref status_codes
+   */
+   int16_t setRxGain(bool boosted);
+
     /*!
      \brief Get expected time-on-air for a given size of payload
 
