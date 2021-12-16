@@ -808,13 +808,8 @@ int16_t SX126x::readData(uint8_t* data, size_t len) {
   if (state != ERR_NONE) {
     return state;
   }
-  if((irq & SX126X_IRQ_CRC_ERR) || (irq & SX126X_IRQ_HEADER_ERR)) {
-    clearIrqStatus();
-    return(ERR_CRC_MISMATCH);
-  }
-
+  
   // get packet length
-  size_t length = len;
 
   uint8_t packetLen, startAddr;
   state = getBufferStatus(&packetLen, &startAddr);
@@ -822,8 +817,11 @@ int16_t SX126x::readData(uint8_t* data, size_t len) {
     return(state);
   }
 
-  if (length > packetLen) {
+  size_t length;
+  if (len > packetLen) {
     length = packetLen;
+  } else {
+    length = len;
   }
 
   // read packet data
@@ -834,6 +832,11 @@ int16_t SX126x::readData(uint8_t* data, size_t len) {
 
   // clear interrupt flags
   state = clearIrqStatus();
+
+  if ((irq & SX126X_IRQ_CRC_ERR) || (irq & SX126X_IRQ_HEADER_ERR)) {
+    //clearIrqStatus();
+    return(ERR_CRC_MISMATCH);
+  }
 
   return(state);
 }
