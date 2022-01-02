@@ -845,6 +845,7 @@ class SX126x {
 
     // not sure where these belong. Leaving them here for now.
     static constexpr uint32_t usPerSecond = 1000000; // as in "microseconds per second".
+    static constexpr uint16_t msPerSecond = 1000;
     static constexpr uint32_t kilo = 1000; // as in "kilohertz". But for dimensional analysis it works better to call it kilo.
     static constexpr uint32_t MHz = 1000000;
 
@@ -918,8 +919,9 @@ class SX126x {
     uint16_t _rxBwKhz_x10;
 #endif
 
-    static constexpr uint32_t maxBusyTimeout = 60000000; // 1 minute failsafe.
-    volatile uint32_t _lastPreambleDetMicros = 0, _longestPacketMicros = 0, _avgPacketMicros = 1E6;
+    static constexpr uint16_t maxBusyTimeout = 5000; // 5 second failsafe
+    volatile uint16_t _lastPreambleDetMillis = 0;
+    //uint16_t _longestPacketMillis = 0, _avgPacketMillis = 1E3;
     volatile bool _maybeReceiving = false;
 
     uint16_t _dataRate;
@@ -939,7 +941,7 @@ class SX126x {
     // these statics could be duplicated to allow multiple instances of SX126x to listen simultaneouslystatic bool _interruptFlag;
     volatile static bool _interruptFlag;
     int16_t rxInterruptAction();
-    void rxInterruptAction(uint16_t irqStatus, uint32_t entryMicros);
+    void rxInterruptAction(uint16_t irqStatus, uint16_t entryMicros);
 
     void (*_rxDoneFunc)(void)  = NULL;
     void (*_txDoneFunc)(void) = NULL;

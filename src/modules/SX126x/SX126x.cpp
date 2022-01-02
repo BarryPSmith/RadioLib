@@ -237,14 +237,14 @@ int16_t SX126x::transmit(uint8_t* data, size_t len, uint8_t addr) {
     return(ERR_PACKET_TOO_LONG);
   }
 
-  uint32_t timeout = 0;
+  uint16_t timeout = 0;
 
   // get currently active modem
   uint8_t modem = getPacketType();
   if(modem == SX126X_PACKET_TYPE_LORA) {
     // calculate timeout (150% of expected time-on-air)
-    // Buggerit. getTimeOnAir is an expensive function. Just use 1 second...
-    timeout = 1000000; // (getTimeOnAir(len) * 3) / 2;
+    // Buggerit. getTimeOnAir is an expensive function. Just use 10 seconds...
+    timeout = 10000; // (getTimeOnAir(len) * 3) / 2;
 
   } else if(modem == SX126X_PACKET_TYPE_GFSK) {
     // calculate timeout (500% of expected time-on-air)
@@ -265,18 +265,18 @@ int16_t SX126x::transmit(uint8_t* data, size_t len, uint8_t addr) {
   }
 
   // wait for packet transmission or timeout
-  uint32_t start = micros();
+  uint16_t start = millis();
   while(!(digitalRead(_mod->getInt0()))) {
     yield();
-    if(micros() - start > timeout) {
+    if((uint16_t)millis() - start > timeout) {
       clearIrqStatus();
       return(ERR_TX_TIMEOUT);
     }
   }
-  uint32_t elapsed_us = micros() - start;
+  //uint16_t elapsed_ms = (uint16_t)millis() - start;
 
   // update data rate
-  _dataRate = (len * 8 * usPerSecond) / elapsed_us;
+  // _dataRate = (len * 8 * msPerSecond) / elapsed_ms;
 
   // clear interrupt flags
   state = clearIrqStatus();
@@ -401,13 +401,15 @@ int16_t SX126x::scanChannel() {
     return(state);
   }
 
-
-  uint32_t symbolLength = ((uint32_t)(10 * 1000) << _sf) / (_bwkHz_x10);
-  uint32_t timeout = 18 * symbolLength;
-  uint32_t start = micros();
+  //timeout is 18 * 2^sf / bw
+  // Worst case is SF 12, BW 500kHz
+  //2^12 = 4000, max timeout is 1.8 seconds.
+  //uint32_t symbolLength = ((uint32_t)(10 * 1000) << _sf) / (_bwkHz_x10);
+  uint16_t timeout_ms = 1000;
+  uint16_t start = millis();
   // wait for channel activity detected or timeout
   while(!digitalRead(_mod->getInt0())) {
-    if(micros() - start > timeout) {
+    if((uint16_t)millis() - start > timeout_ms) {
       return(ERR_RX_TIMEOUT);
       yield();
     }
@@ -446,21 +448,10 @@ int16_t SX126x::isChannelBusy(bool scanIfInRx, bool reenterAfterScan) {
     if(_maybeReceiving) {
       // We might have detected a preamble but never got the message
       // so we need some timeout logic.
-      // This estimates a timeout at least as long as our longest packet we've ever received,
-      // and at least 3 times the average packet length.
-      // We might want to tweak this algorithm (what exists in literature?)
-      uint32_t preambleDetectTimeout = (2 * _avgPacketMicros + _longestPacketMicros);
-      if (preambleDetectTimeout > maxBusyTimeout) {
-        preambleDetectTimeout = maxBusyTimeout;
-      }
-      uint32_t curMicros = micros();
-      RADIOLIB_DEBUG_PRINT(F("dm: "));
-      RADIOLIB_DEBUG_PRINT(curMicros - _lastPreambleDetMicros);
-      RADIOLIB_DEBUG_PRINT(F(" apm: "));
-      RADIOLIB_DEBUG_PRINT(_avgPacketMicros);
-      RADIOLIB_DEBUG_PRINT(F(" lpm: "));
-      RADIOLIB_DEBUG_PRINTLN(_longestPacketMicros);
-      if((curMicros - _lastPreambleDetMicros) < preambleDetectTimeout) {
+      uint16_t curMillis = millis();
+      uint16_t preambleDetectTimeout = maxBusyTimeout;
+      
+      if((curMillis - _lastPreambleDetMillis) < preambleDetectTimeout) {
         return(LORA_DETECTED);
       }
     }
@@ -725,7 +716,7 @@ void SX126x::interruptActionStatic() {
 
 int16_t SX126x::rxInterruptAction() {
   // freeze micros at entry.
-  uint32_t entryMicros = micros();
+  uint16_t entryMillis = millis();
 
   if (_curStatus != SX126X_STATUS_MODE_RX)
     return(ERR_UNKNOWN);
@@ -759,7 +750,7 @@ int16_t SX126x::rxInterruptAction() {
       return(state);
     }
     if (irqStatus) {
-      rxInterruptAction(irqStatus, entryMicros);
+      rxInterruptAction(irqStatus, entryMillis);
     }
   } while (irqStatus);
 
@@ -768,26 +759,14 @@ int16_t SX126x::rxInterruptAction() {
 
 
 
-void SX126x::rxInterruptAction(uint16_t irqStatus, uint32_t entryMicros)
+void SX126x::rxInterruptAction(uint16_t irqStatus, uint16_t entryMillis)
 {
   if(irqStatus & SX126X_IRQ_PREAMBLE_DETECTED) {
     _maybeReceiving = true;
-    _lastPreambleDetMicros = entryMicros;
+    _lastPreambleDetMillis = entryMillis;
   }
   if (irqStatus & SX126X_IRQ_RX_DONE) {
     _maybeReceiving = false;
-    // update our averages
-    // we're in an ISR here, don't waste cycles with floating point or division operations.
-    // exponential moving average weighted for the last N values is approximately
-    // Avg(n) = 1 / N * Val(n) + (N - 1) / N * Avg(n - 1)
-    uint32_t pktMicros = entryMicros - _lastPreambleDetMicros;
-    _avgPacketMicros =
-      (pktMicros >> SX126X_PACKET_AVG_SHIFT_COUNT)
-      +
-      ((_avgPacketMicros * SX126X_PACKET_AVG_NUM) >> SX126X_PACKET_AVG_SHIFT_COUNT);
-    if(pktMicros > _longestPacketMicros) {
-      _longestPacketMicros = pktMicros;
-    }
     if(_rxDoneFunc)
       _rxDoneFunc();
   }
@@ -2067,7 +2046,7 @@ int16_t SX126x::SPItransfer(uint8_t* cmd, uint8_t cmdLen, bool write, uint8_t* d
   // wait for BUSY to go high and then low
   if(waitForBusy && !_bailIfBusy) {
     delayMicroseconds(1);
-    start = millis();
+    start = (uint16_t)millis();
     while(digitalRead(_mod->getInt1())) {
       if((uint16_t)millis() - start >= timeout) {
         status = SX126X_STATUS_CMD_TIMEOUT;
