@@ -914,7 +914,7 @@ class SX126x {
 
 #ifndef FSK
     uint32_t _br, _freqDev;
-    uint8_t _rxBw, _pulseShape, _crcTypeFSK, _syncWordLength, _addrComp, _whitening, _packetType;
+    uint8_t _rxBw, _pulseShape, _crcTypeFSK, _syncWordLength, _addrComp, _whitening, _packetType, _packetLen;
     uint16_t _preambleLengthFSK;
     uint16_t _rxBwKhz_x10;
 #endif
